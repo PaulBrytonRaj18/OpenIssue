@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from app.core.config import get_settings
@@ -6,8 +7,9 @@ from app.core.database import init_db
 from app.routes import auth, github, issues
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from jose import jwt as jose_jwt
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 
 logging.basicConfig(
@@ -45,12 +47,13 @@ limiter = Limiter(key_func=rate_limit_key, default_limits=["60/minute"])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     logger.info("OpenIssue API starting up...")
-    await init_db()
-    logger.info("Database initialized")
+    try:
+        await init_db()
+        logger.info("Database initialized")
+    except Exception as e:
+        logger.warning("Database init failed (tables may already exist): %s", e)
     yield
-    # Shutdown
     logger.info("OpenIssue API shutting down")
 
 
@@ -62,15 +65,30 @@ app = FastAPI(
 )
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS — allow Next.js frontend
+
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"error": f"Rate limit exceeded: {exc.detail}"},
+        headers={"Retry-After": str(getattr(exc, "retry_after", ""))},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
+# CORS — allow Next.js frontends
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "https://open-issue.vercel.app",
+    "https://openissue.netlify.app",
+]
+if production_frontend := os.environ.get("FRONTEND_URL"):
+    ALLOWED_ORIGINS.append(production_frontend)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://openissue.vercel.app",  # update with your domain
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

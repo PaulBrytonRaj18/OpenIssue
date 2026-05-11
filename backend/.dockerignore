@@ -1,0 +1,17 @@
+.env
+.env.local
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.git/
+venv/
+.venv/
+tests/
+*.md
+Dockerfile
+.dockerignore
+api/
+vercel.json

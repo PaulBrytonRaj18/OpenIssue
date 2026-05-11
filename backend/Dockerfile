@@ -1,17 +1,51 @@
-FROM python:3.11-slim
+# ── Stage 1: Builder ──────────────────────────────────────────
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade pip
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# ── Stage 2: Runtime ──────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system --gid 1001 app \
+    && adduser --system --uid 1001 --gid 1001 app
+
+COPY --from=builder /root/.local /root/.local
+
+ENV PATH=/root/.local/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 COPY . .
 
-EXPOSE 8000
+EXPOSE 8080
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+USER app
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import http.client; conn=http.client.HTTPConnection('localhost', ${PORT:-8080}); conn.request('GET', '/health'); resp=conn.getresponse(); exit(0 if resp.status==200 else 1)"
+
+CMD exec gunicorn main:app \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 0.0.0.0:${PORT:-8080} \
+    --workers 2 \
+    --max-requests 1000 \
+    --max-requests-jitter 50 \
+    --timeout 120 \
+    --keep-alive 5 \
+    --log-level info \
+    --access-logfile - \
+    --error-logfile -

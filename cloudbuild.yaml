@@ -1,0 +1,120 @@
+steps:
+  # ── Backend: Build & push ────────────────────────────────────
+  - id: backend-build
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker build \
+          -t gcr.io/$PROJECT_ID/openissue-backend:$COMMIT_SHA \
+          -t gcr.io/$PROJECT_ID/openissue-backend:latest \
+          ./backend
+
+  - id: backend-push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/openissue-backend:$COMMIT_SHA
+
+  - id: backend-deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - $_BACKEND_SERVICE_NAME
+      - --image=gcr.io/$PROJECT_ID/openissue-backend:$COMMIT_SHA
+      - --region=$_REGION
+      - --platform=managed
+      - --allow-unauthenticated
+      - --min-instances=$_BACKEND_MIN_INSTANCES
+      - --max-instances=$_BACKEND_MAX_INSTANCES
+      - --concurrency=$_BACKEND_CONCURRENCY
+      - --cpu=$_BACKEND_CPU
+      - --memory=$_BACKEND_MEMORY
+      - --timeout=$_BACKEND_TIMEOUT
+      - --set-env-vars=DATABASE_URL=$_DATABASE_URL,SECRET_KEY=$_SECRET_KEY,GITHUB_TOKEN=$_GITHUB_TOKEN,FRONTEND_URL=$_FRONTEND_URL,REDIS_URL=$_REDIS_URL
+      - --set-secrets=GITHUB_CLIENT_ID=$_GITHUB_CLIENT_ID_SECRET,GITHUB_CLIENT_SECRET=$_GITHUB_CLIENT_SECRET_SECRET
+
+  # ── Frontend: Build & push ───────────────────────────────────
+  - id: frontend-build
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        docker build \
+          --build-arg NEXT_PUBLIC_API_URL=$_NEXT_PUBLIC_API_URL \
+          -t gcr.io/$PROJECT_ID/openissue-frontend:$COMMIT_SHA \
+          -t gcr.io/$PROJECT_ID/openissue-frontend:latest \
+          ./frontend
+
+  - id: frontend-push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/openissue-frontend:$COMMIT_SHA
+
+  - id: frontend-deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - $_FRONTEND_SERVICE_NAME
+      - --image=gcr.io/$PROJECT_ID/openissue-frontend:$COMMIT_SHA
+      - --region=$_REGION
+      - --platform=managed
+      - --allow-unauthenticated
+      - --min-instances=$_FRONTEND_MIN_INSTANCES
+      - --max-instances=$_FRONTEND_MAX_INSTANCES
+      - --concurrency=$_FRONTEND_CONCURRENCY
+      - --cpu=$_FRONTEND_CPU
+      - --memory=$_FRONTEND_MEMORY
+      - --timeout=$_FRONTEND_TIMEOUT
+      - --set-env-vars=NEXTAUTH_URL=$_NEXTAUTH_URL,NEXTAUTH_SECRET=$_NEXTAUTH_SECRET
+      - --set-secrets=GITHUB_CLIENT_ID=$_GITHUB_CLIENT_ID_SECRET,GITHUB_CLIENT_SECRET=$_GITHUB_CLIENT_SECRET_SECRET
+
+images:
+  - gcr.io/$PROJECT_ID/openissue-backend
+  - gcr.io/$PROJECT_ID/openissue-frontend
+
+# ── Substitutions (set these in Cloud Build trigger or gcloud) ─
+substitutions:
+  # Region
+  _REGION: us-central1
+
+  # Backend
+  _BACKEND_SERVICE_NAME: openissue-backend
+  _BACKEND_MIN_INSTANCES: "0"
+  _BACKEND_MAX_INSTANCES: "5"
+  _BACKEND_CONCURRENCY: "80"
+  _BACKEND_CPU: "2"
+  _BACKEND_MEMORY: "1Gi"
+  _BACKEND_TIMEOUT: "300s"
+
+  # Frontend
+  _FRONTEND_SERVICE_NAME: openissue-frontend
+  _FRONTEND_MIN_INSTANCES: "0"
+  _FRONTEND_MAX_INSTANCES: "5"
+  _FRONTEND_CONCURRENCY: "80"
+  _FRONTEND_CPU: "1"
+  _FRONTEND_MEMORY: "512Mi"
+  _FRONTEND_TIMEOUT: "300s"
+
+  # Backend env vars — set these in the trigger or with --substitutions
+  _DATABASE_URL: postgresql://user:pass@host:5432/db
+  _SECRET_KEY: change_me
+  _GITHUB_TOKEN: change_me
+  _FRONTEND_URL: https://openissue-frontend-xxx-uc.a.run.app
+  _REDIS_URL: ""
+
+  # Frontend env vars
+  _NEXT_PUBLIC_API_URL: https://openissue-backend-xxx-uc.a.run.app
+  _NEXTAUTH_URL: https://openissue-frontend-xxx-uc.a.run.app
+  _NEXTAUTH_SECRET: change_me
+
+  # Secret Manager references — format: projects/PROJECT/secrets/SECRET:VERSION
+  _GITHUB_CLIENT_ID_SECRET: projects/$PROJECT_ID/secrets/GITHUB_CLIENT_ID:latest
+  _GITHUB_CLIENT_SECRET_SECRET: projects/$PROJECT_ID/secrets/GITHUB_CLIENT_SECRET:latest
