@@ -1,7 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,19 +46,19 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=_find_env_file(), extra="ignore")
 
-    @model_validator(mode="after")
-    def validate_required(self):
+    def check_errors(self) -> list[str]:
+        errors: list[str] = []
         if not self.SECRET_KEY or self.SECRET_KEY == "change_this_in_production_use_random_string":
-            raise ValueError(
-                "SECRET_KEY must be changed from the default. "
+            errors.append(
+                "SECRET_KEY is not set or still default. "
                 "Generate one with: python3 -c \"import secrets; print(secrets.token_hex(32))\""
             )
         if not self.GITHUB_TOKEN:
-            raise ValueError(
+            errors.append(
                 "GITHUB_TOKEN is required. Create one at https://github.com/settings/tokens "
                 "(scopes: public_repo, read:user)"
             )
-        return self
+        return errors
 
 
 @lru_cache()

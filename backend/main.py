@@ -48,12 +48,24 @@ limiter = Limiter(key_func=rate_limit_key, default_limits=["60/minute"])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("OpenIssue API starting up...")
+
+    # Validate critical config (log errors but don't crash — gunicorn needs the port open)
+    config_errors = settings.check_errors()
+    if config_errors:
+        for err in config_errors:
+            logger.error("CONFIG: %s", err)
+        logger.warning("CONFIG: %d issue(s) found — some endpoints will return 500", len(config_errors))
+    else:
+        logger.info("CONFIG: all checks passed")
+
     try:
         await init_db()
         logger.info("Database initialized")
     except Exception as e:
         logger.warning("Database init failed (tables may already exist): %s", e)
+
     yield
+
     logger.info("OpenIssue API shutting down")
 
 
@@ -63,6 +75,7 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan,
 )
+app.state.config_errors = settings.check_errors()
 
 app.state.limiter = limiter
 
@@ -110,5 +123,8 @@ async def root():
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    errors = request.app.state.config_errors
+    if errors:
+        return {"status": "degraded", "config_errors": errors}
     return {"status": "ok"}
