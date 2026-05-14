@@ -24,9 +24,13 @@ export function Navbar() {
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
         {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
-          <div className="w-7 h-7 rounded-lg bg-[var(--accent)] flex items-center justify-center">
-            <span className="text-black font-bold text-xs font-mono">OI</span>
-          </div>
+          <Image
+            src="/logo.svg"
+            alt="OpenIssue"
+            width={36}
+            height={36}
+            className="w-9 h-9"
+          />
           <span className="font-display font-bold text-base text-[var(--foreground)] hidden sm:inline">
             OpenIssue
           </span>

@@ -14,8 +14,6 @@ node_modules/
 *.md
 Dockerfile
 .dockerignore
-nginx.conf
-start.sh
 docker-compose.yml
 CONTRIBUTING.md
 LICENSE

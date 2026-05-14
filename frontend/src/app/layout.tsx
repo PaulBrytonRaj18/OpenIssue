@@ -13,6 +13,9 @@ export const metadata: Metadata = {
     description: "Find open source issues matched to your skills",
     type: "website",
   },
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
