@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search as SearchIcon, Filter, X, SlidersHorizontal, Bookmark, Sparkles, Cpu } from "lucide-react";
@@ -24,6 +24,14 @@ const LABEL_FILTERS = [
 ];
 
 export default function SearchPage() {
+  return (
+    <Suspense fallback={<PageLoader message="Loading search..." />}>
+      <SearchPageContent />
+    </Suspense>
+  );
+}
+
+function SearchPageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -153,6 +161,7 @@ export default function SearchPage() {
       setQuery(q);
       performSearch(q, language, difficulty, labelFilter, useSmartSearch);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
