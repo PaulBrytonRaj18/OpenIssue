@@ -59,7 +59,7 @@ export default function DashboardPage() {
       });
       // Store JWT for subsequent API calls
       if (res.data?.access_token) {
-        localStorage.setItem("openissue_token", res.data.access_token);
+        localStorage.setItem("issuecompass_token", res.data.access_token);
       }
       return res.data;
     } catch (e) {
@@ -92,8 +92,8 @@ export default function DashboardPage() {
       if (res.data.user_skills) setFingerprint(res.data.user_skills);
     } catch (e: unknown) {
       const err = e as { response?: { status?: number } };
-      if (err?.response?.status === 401) {
-        // Token expired, re-sync
+      if (err?.response?.status === 401 || err?.response?.status === 422) {
+        // Token missing or expired, re-sync
         await syncUserToBackend();
       } else {
         setError("Failed to load matches. Make sure the backend is running.");

@@ -1,4 +1,4 @@
-# OpenIssue
+# IssueCompass
 
 **Match open-source contributors to issues they can actually solve.**
 
@@ -20,7 +20,7 @@ Developers want to contribute to open source but face a discovery gap:
 
 ## The Solution
 
-OpenIssue analyzes your **actual GitHub activity** to build a personal skill fingerprint, then uses **pgvector semantic similarity search** to match you with open issues across thousands of repositories that align with your demonstrated abilities.
+IssueCompass analyzes your **actual GitHub activity** to build a personal skill fingerprint, then uses **pgvector semantic similarity search** to match you with open issues across thousands of repositories that align with your demonstrated abilities.
 
 ```
 GitHub Login  →  Fetch repos & activity  →  Build skill vector  →  Semantic match  →  Personalized feed

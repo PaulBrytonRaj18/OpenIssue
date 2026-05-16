@@ -2,18 +2,18 @@ services:
   # ─── PostgreSQL with pgvector ───────────────────────────────
   db:
     image: pgvector/pgvector:pg16
-    container_name: openissue_db
+    container_name: issuecompass_db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: openissue
-      POSTGRES_PASSWORD: openissue
-      POSTGRES_DB: openissue
+      POSTGRES_USER: issuecompass
+      POSTGRES_PASSWORD: issuecompass
+      POSTGRES_DB: issuecompass
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U openissue"]
+      test: ["CMD-SHELL", "pg_isready -U issuecompass"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -21,7 +21,7 @@ services:
   # ─── Redis ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: openissue_redis
+    container_name: issuecompass_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -36,7 +36,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: openissue_backend
+    container_name: issuecompass_backend
     restart: unless-stopped
     depends_on:
       db:
@@ -44,7 +44,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://openissue:openissue@db:5432/openissue
+      DATABASE_URL: postgresql://issuecompass:issuecompass@db:5432/issuecompass
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY}
       GITHUB_TOKEN: ${GITHUB_TOKEN}
@@ -61,7 +61,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: openissue_frontend
+    container_name: issuecompass_frontend
     restart: unless-stopped
     depends_on:
       - backend

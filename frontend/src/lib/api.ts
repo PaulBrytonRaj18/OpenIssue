@@ -10,7 +10,12 @@ const api = axios.create({
 // Attach token from localStorage if present
 api.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem("openissue_token");
+    let token = localStorage.getItem("issuecompass_token");
+    // Backward compat: fallback to old key
+    if (!token) {
+      token = localStorage.getItem("openissue_token");
+      if (token) localStorage.setItem("issuecompass_token", token);
+    }
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

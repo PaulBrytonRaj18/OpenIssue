@@ -75,7 +75,7 @@ class TestHealthEndpoints:
         resp = client.get("/")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["name"] == "OpenIssue API"
+        assert data["name"] == "IssueCompass API"
         assert data["status"] == "running"
 
     def test_health(self, client):

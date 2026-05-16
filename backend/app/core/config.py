@@ -18,12 +18,12 @@ def _find_env_file() -> str:
 
 class Settings(BaseSettings):
     # App
-    APP_NAME: str = "OpenIssue"
+    APP_NAME: str = "IssueCompass"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
 
     # Database
-    DATABASE_URL: str = "postgresql://openissue:openissue@localhost:5432/openissue"
+    DATABASE_URL: str = "postgresql://issuecompass:issuecompass@localhost:5432/issuecompass"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

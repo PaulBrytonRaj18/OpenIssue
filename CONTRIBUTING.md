@@ -1,14 +1,14 @@
-# Contributing to OpenIssue
+# Contributing to IssueCompass
 
-First off — thank you for considering a contribution. OpenIssue is built for the open source community, and every contribution matters.
+First off — thank you for considering a contribution. IssueCompass is built for the open source community, and every contribution matters.
 
 ---
 
 ## Quick Start for Contributors
 
 ```bash
-git clone https://github.com/yourusername/openissue.git
-cd openissue
+git clone https://github.com/yourusername/issuecompass.git
+cd issuecompass
 cp .env.example .env
 # Fill in GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, NEXTAUTH_SECRET
 docker-compose up --build
@@ -45,7 +45,7 @@ Open an issue with the `enhancement` label. Describe the feature and why it bene
 ## Project Structure Reference
 
 ```
-openissue/
+issuecompass/
 ├── frontend/src/
 │   ├── app/          ← Next.js pages (App Router)
 │   ├── components/   ← Reusable UI components

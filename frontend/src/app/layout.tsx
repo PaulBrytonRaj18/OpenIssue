@@ -4,12 +4,12 @@ import { Providers } from "./providers";
 import { Analytics } from "@vercel/analytics/next";
 
 export const metadata: Metadata = {
-  title: "OpenIssue — Find open source issues matched to your skills",
+  title: "IssueCompass — Find open source issues matched to your skills",
   description:
-    "Stop searching. Start contributing. OpenIssue matches you to open-source issues you can actually solve based on your real GitHub activity.",
+    "Stop searching. Start contributing. IssueCompass matches you to open-source issues you can actually solve based on your real GitHub activity.",
   keywords: ["open source", "github", "contributing", "developer", "issues"],
   openGraph: {
-    title: "OpenIssue",
+    title: "IssueCompass",
     description: "Find open source issues matched to your skills",
     type: "website",
   },

@@ -29,13 +29,13 @@ export function Navbar() {
         <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
           <Image
             src="/logo.svg"
-            alt="OpenIssue"
+            alt="IssueCompass"
             width={36}
             height={36}
             className="w-9 h-9"
           />
           <span className="font-display font-bold text-base text-[var(--foreground)] hidden sm:inline">
-            OpenIssue
+            IssueCompass
           </span>
         </Link>
 

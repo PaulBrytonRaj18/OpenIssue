@@ -148,7 +148,7 @@ function SearchPageContent() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const token = localStorage.getItem("openissue_token");
+      const token = localStorage.getItem("issuecompass_token");
       if (!token && status === "unauthenticated") {
         router.push("/");
       }

@@ -56,7 +56,7 @@ export default function ProfilePage() {
           followers: user.followers ?? 0,
         });
         if (authRes.data?.access_token) {
-          localStorage.setItem("openissue_token", authRes.data.access_token);
+          localStorage.setItem("issuecompass_token", authRes.data.access_token);
         }
         // Load fingerprint and GitHub profile in parallel
         const [fpRes, ghRes] = await Promise.allSettled([

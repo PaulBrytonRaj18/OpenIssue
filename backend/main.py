@@ -17,7 +17,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger("openissue")
+logger = logging.getLogger("issuecompass")
 
 settings = get_settings()
 
@@ -47,7 +47,7 @@ limiter = Limiter(key_func=rate_limit_key, default_limits=["60/minute"])
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("OpenIssue API starting up...")
+    logger.info("IssueCompass API starting up...")
 
     # Validate critical config (log errors but don't crash — gunicorn needs the port open)
     config_errors = settings.check_errors()
@@ -66,11 +66,11 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    logger.info("OpenIssue API shutting down")
+    logger.info("IssueCompass API shutting down")
 
 
 app = FastAPI(
-    title="OpenIssue API",
+    title="IssueCompass API",
     description="Match open-source contributors to issues they can actually solve.",
     version=settings.APP_VERSION,
     lifespan=lifespan,
@@ -116,7 +116,7 @@ app.include_router(searches.router, prefix=API_PREFIX)
 @app.get("/")
 async def root():
     return {
-        "name": "OpenIssue API",
+        "name": "IssueCompass API",
         "version": settings.APP_VERSION,
         "status": "running",
         "docs": "/docs",

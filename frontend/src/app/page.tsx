@@ -85,7 +85,7 @@ export default function LandingPage() {
             <span className="text-black font-bold text-xs font-mono">OI</span>
           </div>
           <span className="font-display font-bold text-lg text-[var(--foreground)]">
-            OpenIssue
+            IssueCompass
           </span>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border border-[var(--accent-dim)] text-[var(--accent)] ml-1">
             FOSS
@@ -93,7 +93,7 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-4">
           <a
-            href="https://github.com/yourusername/openissue"
+            href="https://github.com/yourusername/issuecompass"
             target="_blank"
             className="flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
           >
@@ -129,7 +129,7 @@ export default function LandingPage() {
             <span className="text-[var(--accent)] text-glow">Start contributing.</span>
           </h1>
           <p className="text-lg sm:text-xl text-[var(--muted)] max-w-2xl mx-auto leading-relaxed">
-            OpenIssue analyzes your GitHub activity, builds your personal skill
+            IssueCompass analyzes your GitHub activity, builds your personal skill
             fingerprint, and matches you to open-source issues you can{" "}
             <em>actually</em> solve.
           </p>
@@ -147,7 +147,7 @@ export default function LandingPage() {
             <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
           </button>
           <a
-            href="https://github.com/yourusername/openissue"
+            href="https://github.com/yourusername/issuecompass"
             className="flex items-center gap-2 px-6 py-4 rounded-xl border border-[var(--border)] text-[var(--foreground-dim)] text-sm hover:border-[var(--border-bright)] transition-colors"
           >
             <Star size={15} />
@@ -259,7 +259,7 @@ export default function LandingPage() {
         <p>
           Built with ❤️ for the open source community.{" "}
           <a
-            href="https://github.com/yourusername/openissue"
+            href="https://github.com/yourusername/issuecompass"
             className="text-[var(--accent)] hover:opacity-80"
           >
             MIT License
