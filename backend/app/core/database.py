@@ -19,7 +19,7 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=5,
     pool_recycle=1800,
-    connect_args={"timeout": 10, "statement_cache_size": 0, "prepared_statement_cache_size": 0},
+    connect_args={"timeout": 10, "statement_cache_size": 0},
 )
 
 AsyncSessionLocal = async_sessionmaker(
