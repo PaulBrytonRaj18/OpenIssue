@@ -16,16 +16,14 @@ import {
 import { Navbar } from "@/components/Navbar";
 import { SkillFingerprintPanel } from "@/components/SkillFingerprint";
 import { PageLoader } from "@/components/Spinner";
-import { githubApi, authApi } from "@/lib/api";
-import { SkillFingerprint } from "@/lib/types";
+import { useSyncUserToBackend } from "@/lib/hooks/use-auth";
+import { useFingerprint, useGitHubUser, useAnalyzeProfile } from "@/lib/hooks/use-github";
 
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [fingerprint, setFingerprint] = useState<SkillFingerprint | null>(null);
-  const [githubProfile, setGithubProfile] = useState<Record<string, unknown> | null>(null);
-  const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const user = session?.user as {
     username?: string;
@@ -38,15 +36,25 @@ export default function ProfilePage() {
     followers?: number;
   };
 
+  const syncMutation = useSyncUserToBackend();
+  const {
+    data: fingerprint,
+    isLoading: fpLoading,
+    refetch: refetchFingerprint,
+  } = useFingerprint();
+  const { data: githubProfile } = useGitHubUser(user?.username ?? "");
+  const analyzeMutation = useAnalyzeProfile();
+
   useEffect(() => {
-    if (status === "unauthenticated") { router.push("/"); return; }
+    if (status === "unauthenticated") {
+      router.push("/");
+      return;
+    }
     if (status !== "authenticated" || !user?.username) return;
 
     const load = async () => {
-      setLoading(true);
       try {
-        // Ensure backend has user
-        const authRes = await authApi.githubCallback({
+        await syncMutation.mutateAsync({
           github_id: user.githubId!,
           github_username: user.username!,
           github_avatar_url: user.avatarUrl,
@@ -55,20 +63,10 @@ export default function ProfilePage() {
           public_repos: user.publicRepos ?? 0,
           followers: user.followers ?? 0,
         });
-        if (authRes.data?.access_token) {
-          localStorage.setItem("issuecompass_token", authRes.data.access_token);
-        }
-        // Load fingerprint and GitHub profile in parallel
-        const [fpRes, ghRes] = await Promise.allSettled([
-          githubApi.getFingerprint(),
-          githubApi.getGitHubUser(user.username!),
-        ]);
-        if (fpRes.status === "fulfilled") setFingerprint(fpRes.value.data);
-        if (ghRes.status === "fulfilled") setGithubProfile(ghRes.value.data);
       } catch (e) {
         console.error(e);
       } finally {
-        setLoading(false);
+        setInitialLoading(false);
       }
     };
     load();
@@ -79,18 +77,18 @@ export default function ProfilePage() {
     if (!user?.username) return;
     setAnalyzing(true);
     try {
-      const res = await githubApi.analyzeProfile(user.username);
-      if (res.data?.skill_json) setFingerprint(res.data.skill_json);
+      await analyzeMutation.mutateAsync(user.username);
+      await refetchFingerprint();
     } finally {
       setAnalyzing(false);
     }
   };
 
-  if (status === "loading" || loading) {
+  if (status === "loading" || initialLoading) {
     return <><Navbar /><PageLoader message="Loading your profile..." /></>;
   }
 
-  const gh = githubProfile ?? {};
+  const gh = (githubProfile as Record<string, unknown>) ?? {};
 
   return (
     <>
@@ -98,9 +96,7 @@ export default function ProfilePage() {
       <div className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex gap-8 items-start">
 
-          {/* ── Left: GitHub Identity ───────────────────── */}
           <div className="w-72 flex-shrink-0 space-y-4">
-            {/* Avatar + name */}
             <div className="p-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] flex flex-col items-center text-center">
               {user?.avatarUrl ? (
                 <Image
@@ -135,7 +131,6 @@ export default function ProfilePage() {
               </a>
             </div>
 
-            {/* Stats */}
             <div className="grid grid-cols-2 gap-3">
               {[
                 { icon: <GitBranch size={14} />, label: "Repos", value: (gh.public_repos as number) ?? user?.publicRepos ?? 0 },
@@ -154,7 +149,6 @@ export default function ProfilePage() {
               ))}
             </div>
 
-            {/* Meta info */}
             <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] space-y-2">
               {(gh.location as string) && (
                 <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
@@ -179,7 +173,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* ── Right: Skill Fingerprint ─────────────────── */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -200,9 +193,13 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            {fingerprint ? (
+            {fpLoading && !fingerprint && (
+              <PageLoader message="Loading skill fingerprint..." />
+            )}
+
+            {!fpLoading && fingerprint ? (
               <SkillFingerprintPanel fingerprint={fingerprint} />
-            ) : (
+            ) : !fpLoading && !fingerprint ? (
               <div className="flex flex-col items-center justify-center py-24 border border-dashed border-[var(--border)] rounded-2xl">
                 <p className="text-sm text-[var(--muted)] mb-4">
                   No skill fingerprint yet.
@@ -215,9 +212,8 @@ export default function ProfilePage() {
                   {analyzing ? "Analyzing your GitHub..." : "Generate Fingerprint"}
                 </button>
               </div>
-            )}
+            ) : null}
 
-            {/* Skill categories breakdown */}
             {fingerprint?.categories && (
               <div className="mt-6 p-5 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
                 <h3 className="text-sm font-mono text-[var(--muted)] mb-4">

@@ -1,12 +1,13 @@
 import logging
-from typing import List, Optional
+from typing import List
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from sqlalchemy import and_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.models import Issue, SavedSearch
+from app.core.ratelimit import limiter
+from app.models.models import SavedSearch, User
 from app.routes.auth import get_current_user
 from app.schemas.schemas import (
     SavedSearchCreate,
@@ -21,12 +22,14 @@ router = APIRouter(prefix="/searches", tags=["searches"])
 
 
 @router.get("/suggestions")
+@limiter.limit("30/minute")
 async def get_search_suggestions(
+    request: Request,
     q: str = Query(..., min_length=2),
     limit: int = Query(8, le=20),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get search suggestions (languages, categories) for autocomplete."""
+    """Get search suggestions (languages, categories) for autocomplete. Rate-limited to 30/min."""
     suggestions = await search_service.get_suggestions(db, q, limit=limit)
     from app.schemas.schemas import SuggestionItem, SuggestionResult
     return SuggestionResult(suggestions=[SuggestionItem(**s) for s in suggestions])
@@ -35,12 +38,11 @@ async def get_search_suggestions(
 @router.post("/save", response_model=SavedSearchPublic)
 async def create_saved_search(
     body: SavedSearchCreate,
-    authorization: str = Header(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Save a search query for later."""
-    token = authorization.replace("Bearer ", "")
-    user = await get_current_user(token, db)
+    user = current_user
 
     saved = SavedSearch(
         user_id=user.id,
@@ -57,12 +59,11 @@ async def create_saved_search(
 
 @router.get("/", response_model=List[SavedSearchPublic])
 async def list_saved_searches(
-    authorization: str = Header(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List user's saved searches."""
-    token = authorization.replace("Bearer ", "")
-    user = await get_current_user(token, db)
+    user = current_user
 
     result = await db.execute(
         select(SavedSearch)
@@ -75,12 +76,11 @@ async def list_saved_searches(
 @router.get("/{search_id}", response_model=SavedSearchPublic)
 async def get_saved_search(
     search_id: int,
-    authorization: str = Header(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a specific saved search."""
-    token = authorization.replace("Bearer ", "")
-    user = await get_current_user(token, db)
+    user = current_user
 
     result = await db.execute(
         select(SavedSearch).where(
@@ -98,12 +98,11 @@ async def get_saved_search(
 async def update_saved_search(
     search_id: int,
     body: SavedSearchUpdate,
-    authorization: str = Header(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a saved search."""
-    token = authorization.replace("Bearer ", "")
-    user = await get_current_user(token, db)
+    user = current_user
 
     result = await db.execute(
         select(SavedSearch).where(
@@ -128,12 +127,11 @@ async def update_saved_search(
 @router.delete("/{search_id}")
 async def delete_saved_search(
     search_id: int,
-    authorization: str = Header(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a saved search."""
-    token = authorization.replace("Bearer ", "")
-    user = await get_current_user(token, db)
+    user = current_user
 
     result = await db.execute(
         select(SavedSearch).where(
@@ -151,14 +149,15 @@ async def delete_saved_search(
 
 
 @router.post("/{search_id}/check")
+@limiter.limit("20/minute")
 async def check_saved_search(
+    request: Request,
     search_id: int,
-    authorization: str = Header(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Check a saved search for new issues since last check."""
-    token = authorization.replace("Bearer ", "")
-    user = await get_current_user(token, db)
+    user = current_user
 
     result = await db.execute(
         select(SavedSearch).where(

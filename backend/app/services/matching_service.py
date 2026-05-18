@@ -5,7 +5,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Issue, Repository, User
-from app.services import scoring_service
+from app.services import ai_service, scoring_service
 
 
 def cosine_similarity(vec_a: List[float], vec_b: List[float]) -> float:
@@ -95,7 +95,17 @@ async def get_matched_issues(
         )
 
         matching_skills = find_matching_skills(user_skill_json, issue_skills)
-        why = scoring_service.explain_score(
+
+        ai_explanation = None
+        if ai_service.AI_ENABLED and user_skill_json and issue_skills:
+            try:
+                ai_explanation = await scoring_service.generate_ai_explanation(
+                    user_skill_json, issue_skills, final_score
+                )
+            except Exception:
+                pass
+
+        why = ai_explanation or scoring_service.explain_score(
             skill_similarity=skill_sim,
             repo_activity=repo_activity,
             freshness=freshness,

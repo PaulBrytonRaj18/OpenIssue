@@ -1,10 +1,10 @@
 "use client";
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, memo, useCallback } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { Github, LayoutDashboard, Bookmark, LogOut, User, Search, TrendingUp, Save } from "lucide-react";
+import { Github, LayoutDashboard, Bookmark, LogOut, User, Search, TrendingUp, Save, Shield } from "lucide-react";
 
 const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: <LayoutDashboard size={15} /> },
@@ -12,20 +12,24 @@ const NAV_LINKS = [
   { href: "/trending", label: "Trending", icon: <TrendingUp size={15} /> },
   { href: "/saved", label: "Saved", icon: <Bookmark size={15} /> },
   { href: "/searches", label: "Searches", icon: <Save size={15} /> },
+  { href: "/maintainer", label: "Maintain", icon: <Shield size={15} /> },
   { href: "/profile", label: "Profile", icon: <User size={15} /> },
 ];
 
-export function Navbar() {
+export const Navbar = memo(function Navbar() {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const user = session?.user as { username?: string; avatarUrl?: string };
 
+  const toggleMenu = useCallback(() => {
+    setMenuOpen((prev) => !prev);
+  }, []);
+
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--border)] bg-[var(--background)]/90 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
-        {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
           <Image
             src="/logo.svg"
@@ -39,12 +43,12 @@ export function Navbar() {
           </span>
         </Link>
 
-        {/* Nav links */}
-        <nav className="flex items-center gap-1">
+        <nav className="flex items-center gap-1" aria-label="Main navigation">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
+              aria-current={pathname === link.href ? "page" : undefined}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                 pathname === link.href
                   ? "bg-[var(--accent-dim)] text-[var(--accent)]"
@@ -57,11 +61,10 @@ export function Navbar() {
           ))}
         </nav>
 
-        {/* User menu */}
         {session && (
           <div className="relative">
             <button
-              onClick={() => setMenuOpen(!menuOpen)}
+              onClick={toggleMenu}
               className="flex items-center gap-2 p-1 rounded-lg hover:bg-[var(--surface)] transition-colors"
             >
               {user?.avatarUrl ? (
@@ -106,4 +109,4 @@ export function Navbar() {
       </div>
     </header>
   );
-}
+});

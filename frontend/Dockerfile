@@ -31,12 +31,13 @@ RUN addgroup --system --gid 1001 app && \
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 
 EXPOSE 8080
 
 USER app
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/ || exit 1
+    CMD node -e "require('http').get('http://localhost:${PORT:-8080}/', r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
 CMD ["node", "server.js"]

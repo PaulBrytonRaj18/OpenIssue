@@ -5,25 +5,32 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
 const api = axios.create({
   baseURL: `${API_URL}/api/v1`,
   headers: { "Content-Type": "application/json" },
+  timeout: 30000,
+  withCredentials: true,
 });
 
-// Attach token from localStorage if present
-api.interceptors.request.use((config) => {
-  if (typeof window !== "undefined") {
-    let token = localStorage.getItem("issuecompass_token");
-    // Backward compat: fallback to old key
-    if (!token) {
-      token = localStorage.getItem("openissue_token");
-      if (token) localStorage.setItem("issuecompass_token", token);
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (axios.isCancel(error)) return Promise.reject(error);
+    const config = error.config;
+    if (!config || config._retry) return Promise.reject(error);
+    const isServerError = error.response?.status >= 500;
+    const isNetworkError = !error.response && error.code === "ERR_NETWORK";
+    if ((isServerError || isNetworkError) && !config._retry) {
+      config._retry = true;
+      await new Promise((r) => setTimeout(r, 1000));
+      return api(config);
     }
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
-// ─── Auth ─────────────────────────────────────────────────────
+export function makeCancelable() {
+  const controller = new AbortController();
+  return { signal: controller.signal, cancel: () => controller.abort() };
+}
+
 export const authApi = {
   githubCallback: (data: {
     github_id: number;
@@ -36,47 +43,54 @@ export const authApi = {
     followers?: number;
   }) => api.post("/auth/github/callback", data),
 
-  getMe: () =>
-    api.get("/auth/me"),
+  getMe: (signal?: AbortSignal) =>
+    api.get("/auth/me", { signal }),
 
   refreshToken: () =>
     api.post("/auth/refresh"),
 };
 
-// ─── GitHub ───────────────────────────────────────────────────
 export const githubApi = {
   analyzeProfile: (username: string) =>
     api.post(`/github/analyze/${username}`),
 
-  getFingerprint: () =>
-    api.get("/github/fingerprint"),
+  getFingerprint: (signal?: AbortSignal) =>
+    api.get("/github/fingerprint", { signal }),
 
-  getGitHubUser: (username: string) =>
-    api.get(`/github/user/${username}`),
+  getGitHubUser: (username: string, signal?: AbortSignal) =>
+    api.get(`/github/user/${username}`, { signal }),
 };
 
-// ─── Issues ───────────────────────────────────────────────────
 export const issuesApi = {
-  getMatches: (params?: {
-    language?: string;
-    label?: string;
-    limit?: number;
-    offset?: number;
-  }) => api.get("/issues/matches", { params }),
+  getMatches: (
+    params?: {
+      language?: string;
+      label?: string;
+      limit?: number;
+      offset?: number;
+    },
+    signal?: AbortSignal
+  ) => api.get("/issues/matches", { params, signal }),
 
-  search: (params: {
-    q: string;
-    language?: string;
-    difficulty?: string;
-    label?: string;
-    limit?: number;
-    offset?: number;
-  }) => api.get("/issues/search", { params }),
+  search: (
+    params: {
+      q: string;
+      language?: string;
+      difficulty?: string;
+      label?: string;
+      limit?: number;
+      offset?: number;
+    },
+    signal?: AbortSignal
+  ) => api.get("/issues/search", { params, signal }),
 
-  getTrending: (params?: {
-    language?: string;
-    limit?: number;
-  }) => api.get("/issues/trending", { params }),
+  getTrending: (
+    params?: {
+      language?: string;
+      limit?: number;
+    },
+    signal?: AbortSignal
+  ) => api.get("/issues/trending", { params, signal }),
 
   triggerIndex: (languages?: string[]) =>
     api.post("/issues/index", null, {
@@ -86,26 +100,28 @@ export const issuesApi = {
   saveIssue: (issueId: number) =>
     api.post(`/issues/save/${issueId}`),
 
-  getSavedIssues: () =>
-    api.get("/issues/saved"),
+  getSavedIssues: (signal?: AbortSignal) =>
+    api.get("/issues/saved", { signal }),
 
-  getStats: () =>
-    api.get("/issues/stats"),
+  getStats: (signal?: AbortSignal) =>
+    api.get("/issues/stats", { signal }),
 
-  smartSearch: (params: {
-    q: string;
-    language?: string;
-    difficulty?: string;
-    label?: string;
-    limit?: number;
-    offset?: number;
-  }) => api.get("/issues/smart-search", { params }),
+  smartSearch: (
+    params: {
+      q: string;
+      language?: string;
+      difficulty?: string;
+      label?: string;
+      limit?: number;
+      offset?: number;
+    },
+    signal?: AbortSignal
+  ) => api.get("/issues/smart-search", { params, signal }),
 };
 
-// ─── Saved Searches ────────────────────────────────────────────
 export const searchesApi = {
-  getSuggestions: (q: string) =>
-    api.get("/searches/suggestions", { params: { q } }),
+  getSuggestions: (q: string, signal?: AbortSignal) =>
+    api.get("/searches/suggestions", { params: { q }, signal }),
 
   saveSearch: (data: {
     name: string;
@@ -114,11 +130,11 @@ export const searchesApi = {
     notify?: boolean;
   }) => api.post("/searches/save", data),
 
-  listSearches: () =>
-    api.get("/searches/"),
+  listSearches: (signal?: AbortSignal) =>
+    api.get("/searches/", { signal }),
 
-  getSearch: (id: number) =>
-    api.get(`/searches/${id}`),
+  getSearch: (id: number, signal?: AbortSignal) =>
+    api.get(`/searches/${id}`, { signal }),
 
   updateSearch: (id: number, data: {
     name?: string;
@@ -130,6 +146,20 @@ export const searchesApi = {
 
   checkSearch: (id: number) =>
     api.post(`/searches/${id}/check`),
+};
+
+export const maintainerApi = {
+  getOverview: (signal?: AbortSignal) =>
+    api.get("/maintainer/overview", { signal }),
+
+  getRepoDetail: (repoId: number, signal?: AbortSignal) =>
+    api.get(`/maintainer/repos/${repoId}`, { signal }),
+
+  getSuggestedContributors: (
+    repoId: number,
+    params?: { limit?: number },
+    signal?: AbortSignal
+  ) => api.get(`/maintainer/repos/${repoId}/contributors`, { params, signal }),
 };
 
 export default api;

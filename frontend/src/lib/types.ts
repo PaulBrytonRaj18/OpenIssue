@@ -131,6 +131,7 @@ export function complexityColor(score: number): string {
 
 export function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "unknown";
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const days = Math.floor(diff / 86400000);
@@ -139,6 +140,46 @@ export function timeAgo(dateStr: string): string {
   if (days < 30) return `${days}d ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
+}
+
+export interface MaintainerRepo {
+  id: number;
+  full_name: string;
+  name: string;
+  description: string | null;
+  owner_login: string;
+  html_url: string;
+  stars: number;
+  forks: number;
+  primary_language: string | null;
+  open_issues_count: number;
+  total_issues: number;
+  good_first_issues: number;
+  help_wanted_issues: number;
+  avg_complexity: number;
+}
+
+export interface MaintainerRepoDetail {
+  repo: MaintainerRepo;
+  issues: Issue[];
+}
+
+export interface ContributorMatch {
+  user_id: number;
+  github_username: string;
+  github_avatar_url: string | null;
+  match_score: number;
+  matching_skills: string[];
+  why_matched: string;
+}
+
+export interface MaintainerOverview {
+  total_repos: number;
+  total_open_issues: number;
+  total_good_first_issues: number;
+  total_help_wanted_issues: number;
+  total_potential_contributors: number;
+  repos: MaintainerRepo[];
 }
 
 export const LANGUAGE_COLORS: Record<string, string> = {

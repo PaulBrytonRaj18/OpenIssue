@@ -1,32 +1,29 @@
 "use client";
-import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Bookmark, ExternalLink, GitBranch } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { EmptyState } from "@/components/EmptyState";
 import { PageLoader } from "@/components/Spinner";
-import { issuesApi } from "@/lib/api";
-import { Issue, complexityLabel, complexityColor, timeAgo, LANGUAGE_COLORS } from "@/lib/types";
+import { useSavedIssues } from "@/lib/hooks/use-issues";
+import { complexityLabel, complexityColor, timeAgo, LANGUAGE_COLORS } from "@/lib/types";
+import type { Issue } from "@/lib/types";
 
 export default function SavedPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: issues, isLoading } = useSavedIssues();
 
-  useEffect(() => {
-    if (status === "unauthenticated") { router.push("/"); return; }
-    if (status !== "authenticated") return;
-    issuesApi.getSavedIssues()
-      .then((res) => setIssues(res.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [status, router]);
+  if (status === "unauthenticated") {
+    router.push("/");
+    return null;
+  }
 
-  if (status === "loading" || loading) {
+  if (status === "loading" || isLoading) {
     return <><Navbar /><PageLoader message="Loading saved issues..." /></>;
   }
+
+  const issueList = (issues as Issue[]) ?? [];
 
   return (
     <>
@@ -37,13 +34,13 @@ export default function SavedPage() {
             Saved Issues
           </h1>
           <p className="text-sm text-[var(--muted)] mt-0.5">
-            {issues.length > 0
-              ? `${issues.length} issue${issues.length !== 1 ? "s" : ""} saved`
+            {issueList.length > 0
+              ? `${issueList.length} issue${issueList.length !== 1 ? "s" : ""} saved`
               : "Issues you bookmark will appear here"}
           </p>
         </div>
 
-        {issues.length === 0 ? (
+        {issueList.length === 0 ? (
           <EmptyState
             icon={<Bookmark size={22} />}
             title="No saved issues yet"
@@ -59,7 +56,7 @@ export default function SavedPage() {
           />
         ) : (
           <div className="space-y-3">
-            {issues.map((issue, i) => {
+            {issueList.map((issue: Issue, i: number) => {
               const repo = issue.repository;
               const langColor =
                 LANGUAGE_COLORS[repo?.primary_language?.toLowerCase() ?? ""] ??

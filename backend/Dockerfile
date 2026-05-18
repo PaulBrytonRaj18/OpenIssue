@@ -34,7 +34,7 @@ EXPOSE 8080
 
 USER app
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import http.client; conn=http.client.HTTPConnection('localhost', ${PORT:-8080}); conn.request('GET', '/health'); resp=conn.getresponse(); exit(0 if resp.status==200 else 1)"
 
 CMD exec gunicorn main:app \

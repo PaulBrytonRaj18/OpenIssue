@@ -1,15 +1,15 @@
 import logging
-import os
 from contextlib import asynccontextmanager
 
-import jwt as jose_jwt
+from app.core.cache import cache_ping, cache_stats, close_redis, init_redis
 from app.core.config import get_settings
 from app.core.database import init_db
-from app.routes import auth, github, issues, searches
+from app.core.monitoring import get_metrics, setup_monitoring
+from app.core.ratelimit import limiter
+from app.routes import auth, github, issues, maintainer, searches
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from slowapi import Limiter
+from fastapi.middleware.gzip import GZipMiddleware
 from slowapi.errors import RateLimitExceeded
 
 logging.basicConfig(
@@ -22,39 +22,15 @@ logger = logging.getLogger("issuecompass")
 settings = get_settings()
 
 
-def rate_limit_key(request: Request) -> str:
-    """Rate-limit by user ID (from JWT) when authenticated, else by client IP."""
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        try:
-            payload = jose_jwt.decode(
-                auth_header[7:], settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-            )
-            user_id = payload.get("sub")
-            if user_id:
-                return f"user:{user_id}"
-        except Exception:
-            pass
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return f"ip:{forwarded.split(',')[0].strip()}"
-    client_host = request.client.host if request.client else "unknown"
-    return f"ip:{client_host}"
-
-
-limiter = Limiter(key_func=rate_limit_key, default_limits=["60/minute"])
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("IssueCompass API starting up...")
 
-    # Validate critical config (log errors but don't crash — gunicorn needs the port open)
     config_errors = settings.check_errors()
     if config_errors:
         for err in config_errors:
             logger.error("CONFIG: %s", err)
-        logger.warning("CONFIG: %d issue(s) found — some endpoints will return 500", len(config_errors))
+        logger.warning("CONFIG: %d issue(s) found", len(config_errors))
     else:
         logger.info("CONFIG: all checks passed")
 
@@ -62,11 +38,18 @@ async def lifespan(app: FastAPI):
         await init_db()
         logger.info("Database initialized")
     except Exception as e:
-        logger.warning("Database init failed (tables may already exist): %s", e)
+        logger.warning("Database init failed: %s", e)
 
+    try:
+        await init_redis()
+    except Exception as e:
+        logger.warning("Redis init failed: %s", e)
+
+    logger.info("IssueCompass API ready")
     yield
 
     logger.info("IssueCompass API shutting down")
+    await close_redis()
 
 
 app = FastAPI(
@@ -76,26 +59,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.config_errors = settings.check_errors()
-
 app.state.limiter = limiter
 
+setup_monitoring(app)
 
-async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=429,
-        content={"error": f"Rate limit exceeded: {exc.detail}"},
-        headers={"Retry-After": str(getattr(exc, "retry_after", ""))},
+        content={"detail": "Rate limit exceeded. Try again later."},
+        headers={"Retry-After": str(exc.retry_after)},
     )
 
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
-app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
-
-# CORS — allow Next.js frontends
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
-if production_frontend := os.environ.get("FRONTEND_URL"):
-    ALLOWED_ORIGINS.append(production_frontend)
+ALLOWED_ORIGINS = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
+if settings.FRONTEND_URL:
+    ALLOWED_ORIGINS.append(settings.FRONTEND_URL)
 
 app.add_middleware(
     CORSMiddleware,
@@ -105,12 +88,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers (v1)
 API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(github.router, prefix=API_PREFIX)
 app.include_router(issues.router, prefix=API_PREFIX)
 app.include_router(searches.router, prefix=API_PREFIX)
+app.include_router(maintainer.router, prefix=API_PREFIX)
 
 
 @app.get("/")
@@ -126,6 +109,55 @@ async def root():
 @app.get("/health")
 async def health(request: Request):
     errors = request.app.state.config_errors
+    req_metrics = get_metrics()
+
+    redis_ok = False
+    try:
+        redis_ok = await cache_ping()
+    except Exception:
+        pass
+
+    db_ok = False
+    try:
+        from app.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+            db_ok = True
+    except Exception:
+        pass
+
+    if not db_ok:
+        errors = errors + ["Database connection failed"]
+    status = "ok"
     if errors:
-        return {"status": "degraded", "config_errors": errors}
-    return {"status": "ok"}
+        status = "degraded"
+
+    result = {
+        "status": status,
+        "version": settings.APP_VERSION,
+        "database": db_ok,
+        "redis": redis_ok,
+        "ai_enabled": bool(settings.GROQ_API_KEY and settings.AI_ENABLED),
+        "metrics": req_metrics,
+        "cache": cache_stats(),
+    }
+    if errors:
+        result["config_errors"] = errors
+    return result
+
+
+@app.get("/metrics")
+async def metrics(request: Request):
+    api_key = request.headers.get("X-Metrics-Key") or request.query_params.get("key")
+    expected = settings.METRICS_API_KEY
+    if expected and api_key != expected:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=403,
+            content={"error": "Forbidden. Set X-Metrics-Key header or METRICS_API_KEY env var."},
+        )
+    return {
+        "requests": get_metrics(),
+        "cache": cache_stats(),
+    }

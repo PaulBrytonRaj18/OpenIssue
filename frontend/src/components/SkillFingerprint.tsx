@@ -1,4 +1,5 @@
 "use client";
+import { memo, useMemo } from "react";
 import { SkillFingerprint, LANGUAGE_COLORS } from "@/lib/types";
 import {
   RadarChart,
@@ -30,7 +31,7 @@ const EXPERIENCE_CONFIG = {
   advanced: { label: "Advanced", color: "#00d4aa", width: "90%" },
 };
 
-export function SkillFingerprintPanel({ fingerprint }: Props) {
+export const SkillFingerprintPanel = memo(function SkillFingerprintPanel({ fingerprint }: Props) {
   const {
     languages,
     categories,
@@ -40,42 +41,52 @@ export function SkillFingerprintPanel({ fingerprint }: Props) {
     total_stars_received,
   } = fingerprint;
 
-  // Radar data from categories
-  const radarData = Object.entries(CATEGORY_LABELS)
-    .map(([key, label]) => ({
-      category: label,
-      score: categories[key] ? Math.min(categories[key].length * 20, 100) : 0,
-    }))
-    .filter((d) => d.score > 0);
+  const radarData = useMemo(
+    () =>
+      Object.entries(CATEGORY_LABELS)
+        .map(([key, label]) => ({
+          category: label,
+          score: categories[key] ? Math.min(categories[key].length * 20, 100) : 0,
+        }))
+        .filter((d) => d.score > 0),
+    [categories]
+  );
 
-  // Top languages for bars
-  const topLangs = Object.entries(languages)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 6);
+  const topLangs = useMemo(
+    () =>
+      Object.entries(languages)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6),
+    [languages]
+  );
 
   const expConfig =
     EXPERIENCE_CONFIG[experience_level] ?? EXPERIENCE_CONFIG.intermediate;
 
+  const stats = useMemo(
+    () => [
+      { icon: <GitBranch size={14} />, label: "Repos", value: total_repos },
+      {
+        icon: <Star size={14} />,
+        label: "Stars",
+        value:
+          total_stars_received >= 1000
+            ? `${(total_stars_received / 1000).toFixed(1)}k`
+            : total_stars_received,
+      },
+      {
+        icon: <Code2 size={14} />,
+        label: "Skills",
+        value: top_skills.length,
+      },
+    ],
+    [total_repos, total_stars_received, top_skills.length]
+  );
+
   return (
     <div className="space-y-4">
-      {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
-        {[
-          { icon: <GitBranch size={14} />, label: "Repos", value: total_repos },
-          {
-            icon: <Star size={14} />,
-            label: "Stars",
-            value:
-              total_stars_received >= 1000
-                ? `${(total_stars_received / 1000).toFixed(1)}k`
-                : total_stars_received,
-          },
-          {
-            icon: <Code2 size={14} />,
-            label: "Skills",
-            value: top_skills.length,
-          },
-        ].map((stat) => (
+        {stats.map((stat) => (
           <div
             key={stat.label}
             className="flex flex-col items-center p-3 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]"
@@ -89,7 +100,6 @@ export function SkillFingerprintPanel({ fingerprint }: Props) {
         ))}
       </div>
 
-      {/* Experience level */}
       <div className="p-4 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs text-[var(--muted)] font-mono">
@@ -113,7 +123,6 @@ export function SkillFingerprintPanel({ fingerprint }: Props) {
         </div>
       </div>
 
-      {/* Language bars */}
       <div className="p-4 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
         <div className="flex items-center gap-2 mb-3">
           <Layers size={13} className="text-[var(--muted)]" />
@@ -145,7 +154,6 @@ export function SkillFingerprintPanel({ fingerprint }: Props) {
         </div>
       </div>
 
-      {/* Radar chart — category distribution */}
       {radarData.length >= 3 && (
         <div className="p-4 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
           <div className="flex items-center gap-2 mb-3">
@@ -182,7 +190,6 @@ export function SkillFingerprintPanel({ fingerprint }: Props) {
         </div>
       )}
 
-      {/* Top skills */}
       <div className="p-4 rounded-xl bg-[var(--surface-2)] border border-[var(--border)]">
         <div className="flex items-center gap-2 mb-3">
           <Code2 size={13} className="text-[var(--muted)]" />
@@ -198,4 +205,4 @@ export function SkillFingerprintPanel({ fingerprint }: Props) {
       </div>
     </div>
   );
-}
+});

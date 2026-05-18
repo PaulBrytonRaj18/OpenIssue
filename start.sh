@@ -13,8 +13,7 @@ trap cleanup TERM INT
 
 export PORT=${PORT:-8080}
 
-envsubst '${PORT}' < /etc/nginx/nginx.conf > /tmp/nginx.conf
-mv /tmp/nginx.conf /etc/nginx/nginx.conf
+sed -i "s/\${PORT}/$PORT/g" /etc/nginx/nginx.conf
 
 cd /app/backend
 gunicorn main:app \

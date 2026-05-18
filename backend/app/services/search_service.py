@@ -1,14 +1,14 @@
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.utils import parse_dt
 from app.models.models import Issue, Repository, User
-from app.services import matching_service, scoring_service, skill_service
+from app.services import ai_service, matching_service, scoring_service, skill_service
 
 logger = logging.getLogger(__name__)
 
@@ -82,9 +82,24 @@ class SearchIntent:
                         self.labels, self.topics, self.categories])
 
 
-def parse_natural_query(query: str) -> SearchIntent:
+async def parse_natural_query(query: str) -> SearchIntent:
     query_lower = query.lower().strip()
     intent = SearchIntent(raw_query=query)
+
+    if ai_service.AI_ENABLED:
+        try:
+            ai_result = await ai_service.parse_query_with_ai(query)
+            if ai_result:
+                intent.languages = ai_result.get("languages", [])
+                intent.difficulty = ai_result.get("difficulty") or None
+                intent.labels = ai_result.get("labels", [])
+                intent.keywords = ai_result.get("keywords", [])[:10]
+                cats = ai_result.get("categories", [])
+                if isinstance(cats, list):
+                    intent.categories = cats
+                return intent
+        except Exception as e:
+            logger.debug("AI query parsing failed, falling back to regex: %s", e)
 
     # 1. Detect difficulty
     for level, terms in DIFFICULTY_TERMS.items():
@@ -156,7 +171,7 @@ async def smart_search(
     offset: int = 0,
     use_semantic: bool = True,
 ) -> List[Dict[str, Any]]:
-    intent = parse_natural_query(query)
+    intent = await parse_natural_query(query)
 
     if language_filter:
         intent.languages.append(language_filter)
@@ -175,7 +190,7 @@ async def smart_search(
         results.extend(github_results)
 
     if use_semantic and user and user.skill_vector and results:
-        results = _apply_semantic_scoring(results, intent)
+        results = await _apply_semantic_scoring(results, intent)
 
     if user and user.skill_json:
         results = re_rank_results(results, user)
@@ -279,8 +294,8 @@ async def _github_fallback(
                     is_good_first_issue=any("good first" in (lb.get("name", "") or "").lower() for lb in item.get("labels", [])),
                     is_help_wanted=any("help wanted" in (lb.get("name", "") or "").lower() for lb in item.get("labels", [])),
                     comments=item.get("comments", 0),
-                    created_at=_parse_dt(item.get("created_at")),
-                    updated_at=_parse_dt(item.get("updated_at")),
+                    created_at=parse_dt(item.get("created_at")),
+                    updated_at=parse_dt(item.get("updated_at")),
                     complexity_score=0.5,
                 ),
                 "repository": Repository(
@@ -327,11 +342,11 @@ def _keyword_relevance_score(issue: Issue, intent: SearchIntent) -> float:
     return score / total_weight if total_weight > 0 else 0.3
 
 
-def _apply_semantic_scoring(
+async def _apply_semantic_scoring(
     results: List[Dict[str, Any]],
     intent: SearchIntent,
 ) -> List[Dict[str, Any]]:
-    query_vector = _intent_to_vector(intent)
+    query_vector = await _intent_to_vector(intent)
 
     for r in results:
         issue = r["issue"]
@@ -344,7 +359,7 @@ def _apply_semantic_scoring(
     return results
 
 
-def _intent_to_vector(intent: SearchIntent) -> List[float]:
+async def _intent_to_vector(intent: SearchIntent) -> List[float]:
     title = expand_query(intent)
     body = " ".join(
         intent.keywords + intent.languages +
@@ -352,7 +367,7 @@ def _intent_to_vector(intent: SearchIntent) -> List[float]:
         intent.categories
     )
     labels = list(set(intent.labels))
-    return skill_service.issue_text_to_vector(title, body, labels)
+    return await skill_service.issue_text_to_vector(title, body, labels)
 
 
 def re_rank_results(
@@ -421,15 +436,6 @@ def _generate_why(
     return "Matched your search query"
 
 
-def _parse_dt(dt_str: Optional[str]) -> Optional[datetime]:
-    if not dt_str:
-        return None
-    try:
-        return datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
 async def get_suggestions(
     db: AsyncSession,
     prefix: str,
@@ -452,21 +458,33 @@ async def get_suggestions(
     )
     languages = [row[0] for row in result.fetchall() if row[0]]
 
-    suggestions = []
-    for lang in languages:
+    if languages:
+        from sqlalchemy import func as sa_func
         count_result = await db.execute(
-            select(Issue).where(
+            select(
+                Repository.primary_language,
+                sa_func.count(Issue.id),
+            )
+            .join(Issue, Issue.repository_id == Repository.id)
+            .where(
                 and_(
                     Issue.state == "open",
-                    Issue.repository.has(Repository.primary_language == lang),
+                    Repository.primary_language.in_(languages),
                 )
             )
+            .group_by(Repository.primary_language)
         )
-        count = len(count_result.fetchall())
-        suggestions.append({
+        count_map = {row[0]: row[1] for row in count_result.fetchall()}
+    else:
+        count_map = {}
+
+    suggestions = [
+        {
             "type": "language",
             "text": lang,
-            "description": f"{count} open issues",
-        })
+            "description": f"{count_map.get(lang, 0)} open issues",
+        }
+        for lang in languages
+    ]
 
     return suggestions[:limit]

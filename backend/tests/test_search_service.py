@@ -1,70 +1,64 @@
+from app.models.models import Issue
 from app.services.search_service import (
     SearchIntent,
+    _keyword_relevance_score,
     expand_query,
     parse_natural_query,
-    _keyword_relevance_score,
 )
-from app.models.models import Issue
 
 
-# ── parse_natural_query ────────────────────────────────────────
-
-
-def test_parse_query_detects_language():
-    intent = parse_natural_query("python backend issues")
+async def test_parse_query_detects_language():
+    intent = await parse_natural_query("python backend issues")
     assert "python" in intent.languages
     assert "backend" in intent.categories
 
 
-def test_parse_query_detects_difficulty():
-    intent = parse_natural_query("beginner React issues for newcomers")
+async def test_parse_query_detects_difficulty():
+    intent = await parse_natural_query("beginner React issues for newcomers")
     assert intent.difficulty == "beginner"
     assert "react" in intent.languages or "javascript" in intent.languages
 
 
-def test_parse_query_detects_advanced():
-    intent = parse_natural_query("complex advanced kernel module")
+async def test_parse_query_detects_advanced():
+    intent = await parse_natural_query("complex advanced kernel module")
     assert intent.difficulty == "advanced"
     assert "systems" in intent.categories
 
 
-def test_parse_query_detects_labels():
-    intent = parse_natural_query("good first issue for beginners")
+async def test_parse_query_detects_labels():
+    intent = await parse_natural_query("good first issue for beginners")
     assert intent.difficulty == "beginner"
     assert "good_first" in intent.labels
 
 
-def test_parse_query_extracts_keywords():
-    intent = parse_natural_query("fix authentication bug in FastAPI")
+async def test_parse_query_extracts_keywords():
+    intent = await parse_natural_query("fix authentication bug in FastAPI")
     assert "fastapi" in intent.languages or "python" in intent.languages
     assert intent.keywords == ["fix", "authentication", "bug"]
 
 
-def test_parse_query_empty():
-    intent = parse_natural_query("")
+async def test_parse_query_empty():
+    intent = await parse_natural_query("")
     assert intent.is_empty
 
 
-def test_parse_query_technical_query():
-    intent = parse_natural_query("TypeScript React frontend UI fixes")
+async def test_parse_query_technical_query():
+    intent = await parse_natural_query("TypeScript React frontend UI fixes")
     assert "typescript" in intent.languages or "javascript" in intent.languages
     assert "frontend" in intent.categories
     assert "fixes" in intent.keywords
 
 
-def test_parse_query_docker():
-    intent = parse_natural_query("Docker compose deployment help wanted")
+async def test_parse_query_docker():
+    intent = await parse_natural_query("Docker compose deployment help wanted")
     assert "docker" in intent.languages
     assert "help_wanted" in intent.labels
 
 
-def test_parse_query_full_stack():
-    intent = parse_natural_query("full stack web development tasks for intermediate")
+async def test_parse_query_full_stack():
+    intent = await parse_natural_query("full stack web development tasks for intermediate")
     assert intent.difficulty == "intermediate" or intent.difficulty == "beginner"
     assert "frontend" in intent.categories or "backend" in intent.categories
-
-
-# ── expand_query ───────────────────────────────────────────────
 
 
 def test_expand_query():
@@ -79,11 +73,8 @@ def test_expand_query():
     assert "python" in expanded
 
 
-# ── _keyword_relevance_score ────────────────────────────────────
-
-
-def test_keyword_relevance_score():
-    intent = parse_natural_query("python api bug")
+async def test_keyword_relevance_score():
+    intent = await parse_natural_query("python api bug")
     issue = Issue(
         id=1,
         github_id=1,
@@ -97,8 +88,8 @@ def test_keyword_relevance_score():
     assert score > 0.5
 
 
-def test_keyword_relevance_score_no_match():
-    intent = parse_natural_query("rust systems programming")
+async def test_keyword_relevance_score_no_match():
+    intent = await parse_natural_query("rust systems programming")
     issue = Issue(
         id=2,
         github_id=2,

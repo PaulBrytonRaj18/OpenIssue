@@ -1,14 +1,15 @@
 "use client";
-import { Suspense, useEffect, useState, useCallback, useRef } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search as SearchIcon, Filter, X, SlidersHorizontal, Bookmark, Sparkles, Cpu } from "lucide-react";
+import { Search as SearchIcon, Filter, X, SlidersHorizontal, Bookmark, Sparkles } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { IssueCard } from "@/components/IssueCard";
 import { EmptyState } from "@/components/EmptyState";
 import { PageLoader } from "@/components/Spinner";
-import { issuesApi, searchesApi } from "@/lib/api";
-import { MatchedIssue, SearchResult, SmartSearchResult, SuggestionItem } from "@/lib/types";
+import { useSmartSearch, useSearch } from "@/lib/hooks/use-issues";
+import { useSuggestions, useSaveSearch } from "@/lib/hooks/use-searches";
+import { MatchedIssue, SmartSearchResult, SuggestionItem } from "@/lib/types";
 
 const LANGUAGES = ["", "Python", "JavaScript", "TypeScript", "Go", "Rust", "Java", "Ruby", "PHP", "C++", "Swift", "Kotlin"];
 const DIFFICULTIES = [
@@ -40,101 +41,109 @@ function SearchPageContent() {
   const [language, setLanguage] = useState(searchParams.get("language") || "");
   const [difficulty, setDifficulty] = useState(searchParams.get("difficulty") || "");
   const [labelFilter, setLabelFilter] = useState(searchParams.get("label") || "");
-  const [results, setResults] = useState<SearchResult | SmartSearchResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [useSmartSearch, setUseSmartSearch] = useState(true);
-  const [suggestions, setSuggestions] = useState<SuggestionItem[]>([]);
+  const [useSmartSearchBool, setUseSmartSearchBool] = useState(true);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestionRef = useRef<HTMLDivElement>(null);
 
-  const performSearch = useCallback(async (q: string, lang: string, diff: string, lbl: string, smart: boolean) => {
-    if (!q.trim()) return;
-    setLoading(true);
-    setSearched(true);
-    try {
-      const params: Record<string, string | number> = { q: q.trim(), limit: 30 };
-      if (lang) params.language = lang;
-      if (diff) params.difficulty = diff;
-      if (lbl) params.label = lbl;
-      if (smart) {
-        const res = await issuesApi.smartSearch(params as any);
-        setResults(res.data as SmartSearchResult);
-      } else {
-        const res = await issuesApi.search(params as any);
-        setResults(res.data as SearchResult);
-      }
-    } catch {
-      setResults(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const saveSearchMutation = useSaveSearch();
 
-  const handleSearch = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+  const searchParamsRecord = useMemo(() => {
+    if (!query.trim()) return null;
+    const params: Record<string, string | number> = { q: query.trim(), limit: 30 };
+    if (language) params.language = language;
+    if (difficulty) params.difficulty = difficulty;
+    if (labelFilter) params.label = labelFilter;
+    return params;
+  }, [query, language, difficulty, labelFilter]);
+
+  const searchQuery = useMemo(() => {
+    if (!searchParamsRecord) return null;
+    if (useSmartSearchBool) {
+      return {
+        q: searchParamsRecord.q as string,
+        language: searchParamsRecord.language as string | undefined,
+        difficulty: searchParamsRecord.difficulty as string | undefined,
+        label: searchParamsRecord.label as string | undefined,
+        limit: searchParamsRecord.limit as number | undefined,
+      };
+    }
+    return searchParamsRecord as {
+      q: string;
+      language?: string;
+      difficulty?: string;
+      label?: string;
+      limit?: number;
+    };
+  }, [searchParamsRecord, useSmartSearchBool]);
+
+  const smartSearchResult = useSmartSearch(
+    useSmartSearchBool && searchQuery ? searchQuery as Parameters<typeof useSmartSearch>[0] : null
+  );
+  const regularSearchResult = useSearch(
+    !useSmartSearchBool && searchQuery ? searchQuery as Parameters<typeof useSearch>[0] : null
+  );
+
+  const results = useSmartSearchBool ? smartSearchResult.data : regularSearchResult.data;
+  const isLoading = useSmartSearchBool ? smartSearchResult.isLoading : regularSearchResult.isLoading;
+
+  const suggestionsQuery = useSuggestions(debouncedQuery);
+
+  useEffect(() => {
+    if (suggestionsQuery.data?.suggestions) {
+      setShowSuggestions(suggestionsQuery.data.suggestions.length > 0);
+    }
+  }, [suggestionsQuery.data]);
+
+  const performSearch = useCallback(() => {
+    if (!query.trim()) return;
+    setSearched(true);
     const params = new URLSearchParams();
     if (query.trim()) params.set("q", query.trim());
     if (language) params.set("language", language);
     if (difficulty) params.set("difficulty", difficulty);
     if (labelFilter) params.set("label", labelFilter);
     router.replace(`/search?${params.toString()}`, { scroll: false });
-    performSearch(query, language, difficulty, labelFilter, useSmartSearch);
     setShowSuggestions(false);
-  };
+  }, [query, language, difficulty, labelFilter, router]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
-  };
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter") performSearch();
+  }, [performSearch]);
 
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setQuery("");
-    setResults(null);
     setSearched(false);
-    setSuggestions([]);
+    setDebouncedQuery("");
     inputRef.current?.focus();
     router.replace("/search", { scroll: false });
-  };
+  }, [router]);
 
-  const fetchSuggestions = useCallback(async (q: string) => {
-    if (q.trim().length < 2) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      return;
-    }
-    try {
-      const res = await searchesApi.getSuggestions(q.trim());
-      setSuggestions(res.data.suggestions);
-      setShowSuggestions(res.data.suggestions.length > 0);
-    } catch {
-      setSuggestions([]);
-    }
-  }, []);
-
-  const onQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setQuery(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchSuggestions(val), 250);
-  };
+    debounceRef.current = setTimeout(() => setDebouncedQuery(val), 300);
+  }, []);
 
-  const selectSuggestion = (item: SuggestionItem) => {
+  const selectSuggestion = useCallback((item: SuggestionItem) => {
     setQuery(item.text);
     setShowSuggestions(false);
     if (item.type === "language") {
       setLanguage(item.text);
     }
-  };
+  }, []);
 
-  const saveSearch = async () => {
+  const saveSearch = useCallback(async () => {
     if (!saveName.trim()) return;
     try {
-      await searchesApi.saveSearch({
+      await saveSearchMutation.mutateAsync({
         name: saveName.trim(),
         query: query,
         filters: { language, difficulty, label: labelFilter },
@@ -142,24 +151,21 @@ function SearchPageContent() {
       setShowSaveDialog(false);
       setSaveName("");
     } catch {
-      // ignore
+      /* ignore */
     }
-  };
+  }, [saveName, query, language, difficulty, labelFilter, saveSearchMutation]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("issuecompass_token");
-      if (!token && status === "unauthenticated") {
-        router.push("/");
-      }
+    if (status === "unauthenticated") {
+      router.push("/");
     }
   }, [status, router]);
 
   useEffect(() => {
     const q = searchParams.get("q");
-    if (q) {
+    if (q && !searched) {
       setQuery(q);
-      performSearch(q, language, difficulty, labelFilter, useSmartSearch);
+      setSearched(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -174,17 +180,22 @@ function SearchPageContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   if (status === "loading") return <PageLoader message="Loading..." />;
 
   const matches = results?.matches ?? [];
   const smartResult = results as SmartSearchResult | null;
-  const isSmart = useSmartSearch && smartResult?.intent;
+  const isSmart = useSmartSearchBool && smartResult?.intent;
 
   return (
     <>
       <Navbar />
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* ── Search Header ───────────────────────────── */}
         <div className="mb-8">
           <h1 className="font-display text-2xl font-bold text-[var(--foreground)] mb-1">
             Search Issues
@@ -194,7 +205,6 @@ function SearchPageContent() {
           </p>
         </div>
 
-        {/* ── Search Bar ──────────────────────────────── */}
         <div className="flex items-center gap-2 mb-4">
           <div className="flex-1 relative">
             <SearchIcon size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
@@ -204,7 +214,9 @@ function SearchPageContent() {
               value={query}
               onChange={onQueryChange}
               onKeyDown={handleKeyDown}
-              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              onFocus={() => {
+                if (suggestionsQuery.data?.suggestions?.length > 0) setShowSuggestions(true);
+              }}
               placeholder='e.g. "beginner React issues" or "FastAPI backend bugs"'
               className="w-full pl-10 pr-10 py-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] text-sm placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent-dim)] transition-colors"
             />
@@ -214,17 +226,16 @@ function SearchPageContent() {
               </button>
             )}
 
-            {/* Autocomplete */}
-            {showSuggestions && (
+            {showSuggestions && suggestionsQuery.data?.suggestions && (
               <div ref={suggestionRef} className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-lg overflow-hidden animate-fade-in">
-                {suggestions.map((s, i) => (
+                {suggestionsQuery.data.suggestions.map((s: SuggestionItem, i: number) => (
                   <button
                     key={i}
                     onClick={() => selectSuggestion(s)}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-[var(--accent-dim)] transition-colors"
                   >
                     {s.type === "language" ? (
-                      <Cpu size={14} className="text-[var(--accent)]" />
+                      <SearchIcon size={14} className="text-[var(--muted)]" />
                     ) : (
                       <SearchIcon size={14} className="text-[var(--muted)]" />
                     )}
@@ -239,21 +250,21 @@ function SearchPageContent() {
           </div>
 
           <button
-            onClick={handleSearch}
-            disabled={loading || !query.trim()}
+            onClick={performSearch}
+            disabled={isLoading || !query.trim()}
             className="px-5 py-3 rounded-xl bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {loading ? "Searching..." : "Search"}
+            {isLoading ? "Searching..." : "Search"}
           </button>
 
           <button
-            onClick={() => setUseSmartSearch(!useSmartSearch)}
+            onClick={() => setUseSmartSearchBool(!useSmartSearchBool)}
             className={`p-3 rounded-xl border transition-colors ${
-              useSmartSearch
+              useSmartSearchBool
                 ? "border-[var(--accent)] text-[var(--accent)] bg-[var(--accent-dim)]"
                 : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
             }`}
-            title={useSmartSearch ? "Smart search enabled" : "Toggle smart search"}
+            title={useSmartSearchBool ? "Smart search enabled" : "Toggle smart search"}
           >
             <Sparkles size={16} />
           </button>
@@ -271,7 +282,6 @@ function SearchPageContent() {
           </button>
         </div>
 
-        {/* ── Filters ────────────────────────────────── */}
         {showFilters && (
           <div className="flex flex-wrap items-center gap-3 mb-6 p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] animate-fade-in">
             <Filter size={14} className="text-[var(--muted)]" />
@@ -297,8 +307,7 @@ function SearchPageContent() {
           </div>
         )}
 
-        {/* ── Search type + intent display ───────────────── */}
-        {!loading && searched && isSmart && (
+        {!isLoading && searched && isSmart && (
           <div className="flex items-center gap-2 mb-4 text-xs text-[var(--muted)]">
             <Sparkles size={12} className="text-[var(--accent)]" />
             <span>Smart search</span>
@@ -332,7 +341,6 @@ function SearchPageContent() {
           </div>
         )}
 
-        {/* ── Save dialog ─────────────────────────────── */}
         {showSaveDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div className="bg-[var(--surface)] rounded-xl p-6 w-96 border border-[var(--border)] shadow-xl">
@@ -352,7 +360,7 @@ function SearchPageContent() {
                   Cancel
                 </button>
                 <button onClick={saveSearch}
-                  disabled={!saveName.trim()}
+                  disabled={!saveName.trim() || saveSearchMutation.isPending}
                   className="px-4 py-2 rounded-lg bg-[var(--accent)] text-black text-sm font-semibold hover:opacity-90 disabled:opacity-50">
                   Save
                 </button>
@@ -361,10 +369,9 @@ function SearchPageContent() {
           </div>
         )}
 
-        {/* ── Results ────────────────────────────────── */}
-        {loading && <PageLoader message="Searching issues..." />}
+        {isLoading && <PageLoader message="Searching issues..." />}
 
-        {!loading && searched && matches.length === 0 && (
+        {!isLoading && searched && matches.length === 0 && (
           <EmptyState
             icon={<SearchIcon size={22} />}
             title="No issues found"
@@ -378,7 +385,7 @@ function SearchPageContent() {
           />
         )}
 
-        {!loading && searched && matches.length > 0 && (
+        {!isLoading && searched && matches.length > 0 && (
           <div>
             <p className="text-xs text-[var(--muted)] mb-4 font-mono">
               {results?.total ?? matches.length} result{matches.length !== 1 ? "s" : ""} for &ldquo;{query}&rdquo;
@@ -391,7 +398,7 @@ function SearchPageContent() {
           </div>
         )}
 
-        {!loading && !searched && (
+        {!isLoading && !searched && (
           <div className="py-20 text-center">
             <SearchIcon size={32} className="mx-auto mb-4 text-[var(--muted)]" />
             <h3 className="font-display font-bold text-[var(--foreground)] text-lg mb-2">

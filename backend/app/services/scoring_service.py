@@ -1,7 +1,11 @@
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from app.models.models import Issue, Repository
+from app.services import ai_service
+
+logger = logging.getLogger(__name__)
 
 SCORE_WEIGHTS = {
     "skill_match": 0.50,
@@ -14,27 +18,22 @@ SCORE_WEIGHTS = {
 
 def compute_repo_activity_score(repo: Repository) -> float:
     score = 0.5
-
     if repo.is_archived:
         return 0.0
-
     if repo.stars > 10000:
         score += 0.2
     elif repo.stars > 1000:
         score += 0.15
     elif repo.stars > 100:
         score += 0.1
-
     if repo.last_indexed:
         days_since = (datetime.now(timezone.utc) - repo.last_indexed).days
         if days_since < 7:
             score += 0.15
         elif days_since < 30:
             score += 0.1
-
     if repo.forks > 100:
         score += 0.1
-
     return min(score, 1.0)
 
 
@@ -53,14 +52,12 @@ def compute_freshness_score(issue: Issue) -> float:
 
 def compute_popularity_score(issue: Issue, repo: Repository) -> float:
     score = 0.0
-
     if issue.comments > 20:
         score += 0.3
     elif issue.comments > 5:
         score += 0.2
     elif issue.comments > 0:
         score += 0.1
-
     if repo.stars > 10000:
         score += 0.4
     elif repo.stars > 1000:
@@ -69,12 +66,10 @@ def compute_popularity_score(issue: Issue, repo: Repository) -> float:
         score += 0.2
     elif repo.stars > 10:
         score += 0.1
-
     if repo.forks > 1000:
         score += 0.2
     elif repo.forks > 100:
         score += 0.1
-
     return min(score, 1.0)
 
 
@@ -118,6 +113,23 @@ def compute_final_score(
         + SCORE_WEIGHTS["interest_match"] * interest_match
         + SCORE_WEIGHTS["popularity"] * popularity
     )
+
+
+async def generate_ai_explanation(
+    user_skills: Dict[str, Any],
+    issue_skills: Dict[str, Any],
+    match_score: float,
+) -> Optional[str]:
+    """Try to generate an AI-powered explanation, returns None if unavailable."""
+    if not ai_service.AI_ENABLED:
+        return None
+    try:
+        return await ai_service.generate_match_explanation(
+            user_skills, issue_skills, match_score
+        )
+    except Exception as e:
+        logger.debug("AI explanation failed: %s", e)
+        return None
 
 
 def explain_score(

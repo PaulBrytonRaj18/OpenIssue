@@ -81,7 +81,19 @@ class TestHealthEndpoints:
     def test_health(self, client):
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        data = resp.json()
+        assert data["status"] in ("ok", "degraded")
+        assert "database" in data
+        assert "redis" in data
+        assert "ai_enabled" in data
+        assert "metrics" in data
+        assert "cache" in data
+
+    def test_health_db_check(self, client):
+        """Health endpoint should include database connectivity check."""
+        resp = client.get("/health")
+        assert resp.status_code == 200
+        assert isinstance(resp.json().get("database"), bool)
 
 
 class TestAuthEndpoints:
@@ -102,10 +114,45 @@ class TestAuthEndpoints:
         assert "access_token" in data
         assert data["token_type"] == "bearer"
 
-    def test_get_me_without_token_returns_422(self, client):
-        """Missing required Authorization header => 422, not 401."""
+    def test_github_callback_sets_cookie(self, client):
+        """HttpOnly cookie should be set on successful auth."""
+        payload = {
+            "github_id": 12345,
+            "github_username": "testuser",
+        }
+        resp = client.post("/api/v1/auth/github/callback", json=payload)
+        assert resp.status_code == 200
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "ic_token=" in set_cookie
+        assert "HttpOnly" in set_cookie
+        assert "SameSite=" in set_cookie
+
+    def test_github_callback_with_state(self, client):
+        """Auth should work with valid X-Auth-State header."""
+        state_resp = client.get("/api/v1/auth/state")
+        state = state_resp.json()["state"]
+        payload = {
+            "github_id": 99999,
+            "github_username": "newuser",
+        }
+        resp = client.post(
+            "/api/v1/auth/github/callback",
+            json=payload,
+            headers={"X-Auth-State": state},
+        )
+        assert resp.status_code == 200, resp.text
+        assert "access_token" in resp.json()
+
+    def test_auth_state_endpoint(self, client):
+        resp = client.get("/api/v1/auth/state")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "state" in data
+        assert len(data["state"]) > 10
+
+    def test_get_me_without_token_returns_401(self, client):
         resp = client.get("/api/v1/auth/me")
-        assert resp.status_code == 422
+        assert resp.status_code == 401
 
     def test_get_me_with_invalid_token_returns_401(self, client):
         resp = client.get(
@@ -122,11 +169,46 @@ class TestAuthEndpoints:
         )
         assert resp.status_code == 200, resp.text
 
+    def test_get_me_with_cookie(self, client):
+        """Auth should work via HttpOnly cookie."""
+        token = create_access_token({"sub": "1"})
+        client.cookies.set("ic_token", token)
+        resp = client.get("/api/v1/auth/me")
+        assert resp.status_code == 200, resp.text
+
+    def test_refresh_token(self, client):
+        token = create_access_token({"sub": "1"})
+        resp = client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+
+    def test_refresh_token_sets_cookie(self, client):
+        token = create_access_token({"sub": "1"})
+        resp = client.post(
+            "/api/v1/auth/refresh",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "ic_token=" in set_cookie
+
 
 class TestIssuesEndpoints:
-    def test_get_matches_without_token_returns_422(self, client):
+    def test_get_matches_without_token_returns_401(self, client):
         resp = client.get("/api/v1/issues/matches")
-        assert resp.status_code == 422
+        assert resp.status_code == 401
+
+    def test_get_matches_with_valid_token(self, client):
+        token = create_access_token({"sub": "1"})
+        resp = client.get(
+            "/api/v1/issues/matches",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, resp.text
 
     def test_stats(self, client):
         resp = client.get("/api/v1/issues/stats")
@@ -136,11 +218,46 @@ class TestIssuesEndpoints:
         assert "total_issues_indexed" in data
         assert "total_repos_indexed" in data
 
+    def test_search_requires_query(self, client):
+        resp = client.get("/api/v1/issues/search")
+        assert resp.status_code == 422
+
+    def test_save_issue_requires_auth(self, client):
+        resp = client.post("/api/v1/issues/save/1")
+        assert resp.status_code == 401
+
+    def test_save_issue_not_found(self, client):
+        """When issue doesn't exist, should return 404."""
+        mock_session = AsyncMock()
+        user_result = MagicMock()
+        user_result.scalar_one_or_none.return_value = _make_mock_user()
+        none_result = MagicMock()
+        none_result.scalar_one_or_none.return_value = None
+
+        mock_session.execute = AsyncMock(side_effect=[user_result, none_result])
+        mock_session.add = MagicMock()
+        mock_session.commit = AsyncMock()
+        mock_session.close = AsyncMock()
+
+        async def override_get_db():
+            yield mock_session
+
+        from main import app
+
+        app.dependency_overrides[get_db] = override_get_db
+        token = create_access_token({"sub": "1"})
+        resp = client.post(
+            "/api/v1/issues/save/1",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, resp.text
+        app.dependency_overrides.clear()
+
 
 class TestGitHubEndpoints:
-    def test_analyze_without_token_returns_422(self, client):
+    def test_analyze_without_token_returns_401(self, client):
         resp = client.post("/api/v1/github/analyze/testuser")
-        assert resp.status_code == 422
+        assert resp.status_code == 401
 
     @patch("app.routes.github.github_service.fetch_user_repos")
     def test_analyze_profile(self, mock_fetch_repos, client):
@@ -160,9 +277,73 @@ class TestGitHubEndpoints:
         )
         assert resp.status_code == 200, resp.text
 
-    def test_get_fingerprint_without_token_returns_422(self, client):
+    def test_get_fingerprint_without_token_returns_401(self, client):
         resp = client.get("/api/v1/github/fingerprint")
+        assert resp.status_code == 401
+
+    def test_get_github_user_public(self, client):
+        with patch("app.routes.github.github_service.fetch_user") as mock_fetch:
+            mock_fetch.return_value = {"login": "testuser", "id": 12345}
+            resp = client.get("/api/v1/github/user/testuser")
+            assert resp.status_code == 200
+
+    def test_get_github_user_not_found(self, client):
+        with patch("app.routes.github.github_service.fetch_user") as mock_fetch:
+            mock_fetch.return_value = None
+            resp = client.get("/api/v1/github/user/nonexistent")
+            assert resp.status_code == 404
+
+
+class TestSearchEndpoints:
+    def test_suggestions_requires_query(self, client):
+        resp = client.get("/api/v1/searches/suggestions")
         assert resp.status_code == 422
+
+    def test_suggestions_with_query(self, client):
+        resp = client.get("/api/v1/searches/suggestions?q=py")
+        assert resp.status_code == 200
+
+    def test_save_search_requires_auth(self, client):
+        resp = client.post("/api/v1/searches/save", json={"name": "test", "query": "python"})
+        assert resp.status_code == 401
+
+    def test_list_searches_requires_auth(self, client):
+        resp = client.get("/api/v1/searches/")
+        assert resp.status_code == 401
+
+
+class TestMaintainerEndpoints:
+    def test_overview_requires_auth(self, client):
+        resp = client.get("/api/v1/maintainer/overview")
+        assert resp.status_code == 401
+
+    def test_repo_detail_requires_auth(self, client):
+        resp = client.get("/api/v1/maintainer/repos/1")
+        assert resp.status_code == 401
+
+    def test_contributors_requires_auth(self, client):
+        resp = client.get("/api/v1/maintainer/repos/1/contributors")
+        assert resp.status_code == 401
+
+
+class TestMetricsEndpoint:
+    def test_metrics_public_when_no_key_set(self, client):
+        resp = client.get("/metrics")
+        assert resp.status_code == 200
+
+    def test_metrics_with_key(self, client):
+        with patch("main.settings.METRICS_API_KEY", "secret123"):
+            from main import app
+            with TestClient(app) as c:
+                resp = c.get("/metrics?key=secret123")
+                assert resp.status_code == 200
+
+    def test_metrics_with_wrong_key(self, client):
+        with patch("main.settings.METRICS_API_KEY", "secret123"):
+            from main import app
+            with TestClient(app) as c:
+                resp = c.get("/metrics?key=wrong")
+                assert resp.status_code == 403
 
 
 class TestCORSMiddleware:
@@ -176,3 +357,30 @@ class TestCORSMiddleware:
         )
         assert resp.status_code == 200
         assert resp.headers.get("access-control-allow-origin") == "http://localhost:3000"
+
+
+class TestSmartSearchEndpoint:
+    def test_smart_search_requires_query(self, client):
+        resp = client.get("/api/v1/issues/smart-search")
+        assert resp.status_code == 422
+
+    def test_smart_search_works_without_auth(self, client):
+        """Smart search should work for anonymous users too."""
+        resp = client.get("/api/v1/issues/smart-search?q=python+bug")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert "matches" in data
+        assert "query" in data
+
+
+class TestIndexEndpoint:
+    def test_index_triggers_background(self, client):
+        token = create_access_token({"sub": "1"})
+        resp = client.post(
+            "/api/v1/issues/index",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert "message" in data
+        assert "languages" in data

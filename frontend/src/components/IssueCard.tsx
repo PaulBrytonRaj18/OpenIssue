@@ -1,12 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, memo, useCallback } from "react";
 import {
   MessageSquare,
   Star,
   ExternalLink,
   Bookmark,
   BookmarkCheck,
-  GitFork,
   Zap,
 } from "lucide-react";
 import {
@@ -17,41 +16,51 @@ import {
   LANGUAGE_COLORS,
 } from "@/lib/types";
 import { issuesApi } from "@/lib/api";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 
 interface IssueCardProps {
   match: MatchedIssue;
   index?: number;
 }
 
-export function IssueCard({ match, index = 0 }: IssueCardProps) {
+export const IssueCard = memo(function IssueCard({ match, index = 0 }: IssueCardProps) {
   const { issue, match_score, matching_skills, why_matched } = match;
   const repo = issue.repository;
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
 
   const scorePercent = Math.round(match_score * 100);
   const langColor =
     LANGUAGE_COLORS[repo?.primary_language?.toLowerCase() ?? ""] ?? "#8b949e";
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (saving || saved) return;
     setSaving(true);
     try {
       await issuesApi.saveIssue(issue.id);
       setSaved(true);
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.saved });
     } catch {
       /* ignore */
     } finally {
       setSaving(false);
     }
-  };
+  }, [saving, saved, issue.id, queryClient]);
+
+  const scoreColor =
+    scorePercent >= 70
+      ? "var(--accent)"
+      : scorePercent >= 40
+      ? "var(--warning)"
+      : "var(--muted)";
 
   return (
     <div
       className="group glass rounded-xl border border-[var(--border)] hover:border-[var(--border-bright)] transition-all duration-200 animate-fade-in overflow-hidden"
       style={{ animationDelay: `${index * 60}ms` }}
     >
-      {/* Match score bar at top */}
       <div className="match-bar rounded-none" style={{ borderRadius: 0 }}>
         <div
           className="match-bar-fill"
@@ -60,10 +69,8 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
       </div>
 
       <div className="p-5">
-        {/* Header row */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="min-w-0 flex-1">
-            {/* Repo name */}
             {repo && (
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="text-xs font-mono text-[var(--muted)] truncate">
@@ -77,25 +84,15 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
                 </div>
               </div>
             )}
-
-            {/* Issue title */}
             <h3 className="text-sm font-medium text-[var(--foreground)] leading-snug line-clamp-2">
               {issue.title}
             </h3>
           </div>
 
-          {/* Match score badge */}
           <div className="flex-shrink-0 flex flex-col items-center">
             <div
               className="text-lg font-bold font-mono"
-              style={{
-                color:
-                  scorePercent >= 70
-                    ? "var(--accent)"
-                    : scorePercent >= 40
-                    ? "var(--warning)"
-                    : "var(--muted)",
-              }}
+              style={{ color: scoreColor }}
             >
               {scorePercent}%
             </div>
@@ -103,7 +100,6 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
           </div>
         </div>
 
-        {/* Why matched */}
         {why_matched && (
           <div className="flex items-start gap-2 mb-3 p-2.5 rounded-lg bg-[var(--accent-glow)] border border-[var(--accent-dim)]">
             <Zap size={12} className="text-[var(--accent)] flex-shrink-0 mt-0.5" />
@@ -113,7 +109,6 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
           </div>
         )}
 
-        {/* Labels row */}
         <div className="flex flex-wrap items-center gap-1.5 mb-3">
           {issue.is_good_first_issue && (
             <span
@@ -144,7 +139,6 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
             ))}
         </div>
 
-        {/* Matching skills */}
         {matching_skills.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
             {matching_skills.slice(0, 5).map((skill) => (
@@ -155,10 +149,8 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
           </div>
         )}
 
-        {/* Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
           <div className="flex items-center gap-3 text-[var(--muted)]">
-            {/* Language */}
             {repo?.primary_language && (
               <div className="flex items-center gap-1 text-xs">
                 <span
@@ -168,22 +160,16 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
                 {repo.primary_language}
               </div>
             )}
-
-            {/* Comments */}
             <div className="flex items-center gap-1 text-xs">
               <MessageSquare size={11} />
               {issue.comments}
             </div>
-
-            {/* Complexity */}
             <div
               className="text-xs font-mono"
               style={{ color: complexityColor(issue.complexity_score) }}
             >
               {complexityLabel(issue.complexity_score)}
             </div>
-
-            {/* Time */}
             {issue.created_at && (
               <span className="text-xs hidden sm:inline">
                 {timeAgo(issue.created_at)}
@@ -191,7 +177,6 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
             )}
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={handleSave}
@@ -219,4 +204,4 @@ export function IssueCard({ match, index = 0 }: IssueCardProps) {
       </div>
     </div>
   );
-}
+});

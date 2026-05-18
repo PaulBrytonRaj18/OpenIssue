@@ -1,78 +1,73 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Search, Trash2, Bell, BellOff, ExternalLink, RefreshCw } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { EmptyState } from "@/components/EmptyState";
 import { PageLoader } from "@/components/Spinner";
-import { searchesApi } from "@/lib/api";
-import { SavedSearch } from "@/lib/types";
+import { useToast } from "@/components/Toast";
+import {
+  useSavedSearches,
+  useUpdateSearch,
+  useDeleteSearch,
+  useCheckSearch,
+} from "@/lib/hooks/use-searches";
+import type { SavedSearch } from "@/lib/types";
 
 export default function SavedSearchesPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [searches, setSearches] = useState<SavedSearch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
-  const fetchSearches = async () => {
-    setLoading(true);
-    try {
-      const res = await searchesApi.listSearches();
-      setSearches(res.data);
-    } catch {
-      setSearches([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: searches,
+    isLoading,
+    refetch,
+  } = useSavedSearches();
+
+  const updateMutation = useUpdateSearch();
+  const deleteMutation = useDeleteSearch();
+  const checkMutation = useCheckSearch();
 
   useEffect(() => {
-    if (status === "authenticated") fetchSearches();
-  }, [status]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("issuecompass_token");
-      if (!token && status === "unauthenticated") {
-        router.push("/");
-      }
+    if (status === "unauthenticated") {
+      router.push("/");
     }
   }, [status, router]);
 
   const handleDelete = async (id: number) => {
     try {
-      await searchesApi.deleteSearch(id);
-      setSearches((prev) => prev.filter((s) => s.id !== id));
+      await deleteMutation.mutateAsync(id);
     } catch {
-      // ignore
+      /* ignore */
     }
   };
 
   const handleToggleNotify = async (s: SavedSearch) => {
     try {
-      const res = await searchesApi.updateSearch(s.id, { notify: !s.notify });
-      setSearches((prev) => prev.map((item) => (item.id === s.id ? res.data : item)));
+      await updateMutation.mutateAsync({ id: s.id, data: { notify: !s.notify } });
     } catch {
-      // ignore
+      /* ignore */
     }
   };
 
   const handleCheck = async (id: number) => {
     try {
-      const res = await searchesApi.checkSearch(id);
-      const data = res.data;
+      const data = await checkMutation.mutateAsync(id);
       if (data.new_since_last_check > 0) {
-        alert(`${data.new_since_last_check} new issue${data.new_since_last_check > 1 ? "s" : ""} found!`);
+        toast(`${data.new_since_last_check} new issue${data.new_since_last_check > 1 ? "s" : ""} found!`, "success");
       } else {
-        alert("No new issues since last check.");
+        toast("No new issues since last check.", "info");
       }
     } catch {
-      // ignore
+      toast("Failed to check for new issues.", "error");
     }
   };
 
   if (status === "loading") return <PageLoader message="Loading..." />;
+
+  const searchList = (searches as SavedSearch[]) ?? [];
 
   return (
     <>
@@ -87,9 +82,9 @@ export default function SavedSearchesPage() {
           </p>
         </div>
 
-        {loading && <PageLoader message="Loading saved searches..." />}
+        {isLoading && <PageLoader message="Loading saved searches..." />}
 
-        {!loading && searches.length === 0 && (
+        {!isLoading && searchList.length === 0 && (
           <EmptyState
             icon={<Search size={22} />}
             title="No saved searches"
@@ -105,9 +100,9 @@ export default function SavedSearchesPage() {
           />
         )}
 
-        {!loading && searches.length > 0 && (
+        {!isLoading && searchList.length > 0 && (
           <div className="space-y-3">
-            {searches.map((s) => (
+            {searchList.map((s: SavedSearch) => (
               <div
                 key={s.id}
                 className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-4"
@@ -128,10 +123,11 @@ export default function SavedSearchesPage() {
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => handleCheck(s.id)}
-                    className="p-2 rounded-lg border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] hover:border-[var(--border-bright)] transition-colors"
+                    disabled={checkMutation.isPending}
+                    className="p-2 rounded-lg border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] hover:border-[var(--border-bright)] transition-colors disabled:opacity-50"
                     title="Check for new issues"
                   >
-                    <RefreshCw size={14} />
+                    <RefreshCw size={14} className={checkMutation.isPending ? "animate-spin" : ""} />
                   </button>
 
                   <button
@@ -144,7 +140,8 @@ export default function SavedSearchesPage() {
 
                   <button
                     onClick={() => handleToggleNotify(s)}
-                    className={`p-2 rounded-lg border transition-colors ${
+                    disabled={updateMutation.isPending}
+                    className={`p-2 rounded-lg border transition-colors disabled:opacity-50 ${
                       s.notify
                         ? "border-[var(--accent)] text-[var(--accent)]"
                         : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
@@ -156,7 +153,8 @@ export default function SavedSearchesPage() {
 
                   <button
                     onClick={() => handleDelete(s.id)}
-                    className="p-2 rounded-lg border border-[var(--border)] text-[var(--muted)] hover:text-red-400 hover:border-red-400/30 transition-colors"
+                    disabled={deleteMutation.isPending}
+                    className="p-2 rounded-lg border border-[var(--border)] text-[var(--muted)] hover:text-red-400 hover:border-red-400/30 transition-colors disabled:opacity-50"
                     title="Delete"
                   >
                     <Trash2 size={14} />

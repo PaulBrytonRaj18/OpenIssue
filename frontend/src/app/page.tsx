@@ -3,7 +3,6 @@ import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Github, Zap, Target, BarChart3, ArrowRight, Star, GitFork } from "lucide-react";
-import { Analytics } from "@vercel/analytics/next";
 
 const DEMO_MATCHES = [
   {
@@ -54,16 +53,10 @@ export default function LandingPage() {
   const { data: session } = useSession();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (session) router.push("/dashboard");
   }, [session, router]);
-
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 3000);
-    return () => clearInterval(id);
-  }, []);
 
   const handleSignIn = async () => {
     setLoading(true);
@@ -93,7 +86,7 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-4">
           <a
-            href="https://github.com/yourusername/issuecompass"
+            href="https://github.com/Paul-Bryton-Raj/IssueCompass"
             target="_blank"
             className="flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
           >
@@ -147,7 +140,7 @@ export default function LandingPage() {
             <ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
           </button>
           <a
-            href="https://github.com/yourusername/issuecompass"
+            href="https://github.com/Paul-Bryton-Raj/IssueCompass"
             className="flex items-center gap-2 px-6 py-4 rounded-xl border border-[var(--border)] text-[var(--foreground-dim)] text-sm hover:border-[var(--border-bright)] transition-colors"
           >
             <Star size={15} />
@@ -169,11 +162,8 @@ export default function LandingPage() {
             {DEMO_MATCHES.map((m, i) => (
               <div
                 key={i}
-                className={`p-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] transition-all duration-700 ${
-                  tick % DEMO_MATCHES.length === i
-                    ? "border-[var(--accent)] shadow-[0_0_15px_var(--accent-glow)]"
-                    : ""
-                }`}
+                className="p-4 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] carousel-card"
+                style={{ animationDelay: `${i * 3}s` }}
               >
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div>
@@ -259,7 +249,7 @@ export default function LandingPage() {
         <p>
           Built with ❤️ for the open source community.{" "}
           <a
-            href="https://github.com/yourusername/issuecompass"
+            href="https://github.com/Paul-Bryton-Raj/IssueCompass"
             className="text-[var(--accent)] hover:opacity-80"
           >
             MIT License

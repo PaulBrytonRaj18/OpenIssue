@@ -20,7 +20,7 @@ def test_stable_hash_different_inputs_different_buckets():
     assert val_a != val_b
 
 
-def test_build_skill_fingerprint_basic():
+async def test_build_skill_fingerprint_basic():
     repos = [
         {
             "name": "repo1",
@@ -37,7 +37,7 @@ def test_build_skill_fingerprint_basic():
             "fork": False,
         },
     ]
-    fp = build_skill_fingerprint(repos)
+    fp = await build_skill_fingerprint(repos)
     assert fp["total_repos"] == 2
     assert "python" in fp["languages"]
     assert "javascript" in fp["languages"]
@@ -45,17 +45,17 @@ def test_build_skill_fingerprint_basic():
     assert fp["experience_level"] == "beginner"
 
 
-def test_build_skill_fingerprint_skips_forks():
+async def test_build_skill_fingerprint_skips_forks():
     repos = [
         {"name": "own", "language": "Python", "fork": False},
         {"name": "forked", "language": "Java", "fork": True},
     ]
-    fp = build_skill_fingerprint(repos)
+    fp = await build_skill_fingerprint(repos)
     assert fp["total_repos"] == 1
     assert "java" not in fp["languages"]
 
 
-def test_skill_fingerprint_to_vector_output_shape():
+async def test_skill_fingerprint_to_vector_output_shape():
     fp = {
         "languages": {"python": 0.5, "javascript": 0.3},
         "topics": ["web", "api"],
@@ -65,34 +65,33 @@ def test_skill_fingerprint_to_vector_output_shape():
         "total_repos": 2,
         "total_stars_received": 0,
     }
-    vec = skill_fingerprint_to_vector(fp)
+    vec = await skill_fingerprint_to_vector(fp)
     assert len(vec) == 128
     assert all(isinstance(v, float) for v in vec)
-    # Should be normalized (norm ~ 1)
     import numpy as np
     norm = np.linalg.norm(vec)
     assert abs(norm - 1.0) < 0.01
 
 
-def test_issue_text_to_vector_output_shape():
-    vec = issue_text_to_vector("Add Python support", "We need to support python 3.11", ["enhancement"])
+async def test_issue_text_to_vector_output_shape():
+    vec = await issue_text_to_vector("Add Python support", "We need to support python 3.11", ["enhancement"])
     assert len(vec) == 128
     import numpy as np
     norm = np.linalg.norm(vec)
     assert abs(norm - 1.0) < 0.01 or norm == 0
 
 
-def test_extract_required_skills():
-    skills = extract_required_skills("Add Python API endpoints with detailed discussion", "Use FastAPI and PostgreSQL for data processing. This is a standard feature that requires typical implementation work across multiple modules with testing and documentation. We should implement it using the usual patterns found in similar projects.", ["backend", "enhancement"])
+async def test_extract_required_skills():
+    skills = await extract_required_skills("Add Python API endpoints with detailed discussion", "Use FastAPI and PostgreSQL for data processing. This is a standard feature that requires typical implementation work across multiple modules with testing and documentation. We should implement it using the usual patterns found in similar projects.", ["backend", "enhancement"])
     assert "backend" in skills["categories"]
     assert skills["complexity"] == 0.5
 
 
-def test_extract_required_skills_beginner():
-    skills = extract_required_skills("Easy beginner issue", "Simple starter task", ["good first issue"])
+async def test_extract_required_skills_beginner():
+    skills = await extract_required_skills("Easy beginner issue", "Simple starter task", ["good first issue"])
     assert skills["complexity"] == 0.2
 
 
-def test_extract_required_skills_advanced():
-    skills = extract_required_skills("Complex advanced feature", "Expert level implementation", ["enhancement"])
+async def test_extract_required_skills_advanced():
+    skills = await extract_required_skills("Complex advanced feature", "Expert level implementation", ["enhancement"])
     assert skills["complexity"] == 0.8

@@ -168,3 +168,47 @@ class SuggestionResult(BaseModel):
 
 
 TokenResponse.model_rebuild()
+
+
+# ─── Maintainer Dashboard Schemas ────────────────────────────
+
+class MaintainerRepo(BaseModel):
+    id: int
+    full_name: str
+    name: str
+    description: Optional[str] = None
+    owner_login: str
+    html_url: str
+    stars: int = 0
+    forks: int = 0
+    primary_language: Optional[str] = None
+    open_issues_count: int = 0
+    total_issues: int = 0
+    good_first_issues: int = 0
+    help_wanted_issues: int = 0
+    avg_complexity: float = 0.0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MaintainerRepoDetail(BaseModel):
+    repo: MaintainerRepo
+    issues: List[IssuePublic]
+
+
+class ContributorMatch(BaseModel):
+    user_id: int
+    github_username: str
+    github_avatar_url: Optional[str] = None
+    match_score: float
+    matching_skills: List[str]
+    why_matched: str
+
+
+class MaintainerOverview(BaseModel):
+    total_repos: int
+    total_open_issues: int
+    total_good_first_issues: int
+    total_help_wanted_issues: int
+    total_potential_contributors: int
+    repos: List[MaintainerRepo]
